@@ -39,6 +39,7 @@ internal static class SelfTest
         {
             try
             {
+                DisplayModeTests(Check);
                 RenderTests(hwnd, outputDirectory, Check);
                 SessionTest(hwnd, outputDirectory, preview: true, Check);
                 if (includeOverlay)
@@ -67,6 +68,37 @@ internal static class SelfTest
         foreach (string line in report)
             Log.Info("selftest: " + line);
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Display mode switching, without touching the screen: the driver is only asked whether it
+    /// would accept the mode (CDS_TEST).
+    /// </summary>
+    private static void DisplayModeTests(Action<bool, string> check)
+    {
+        foreach (var monitor in MonitorInfo.GetAll())
+        {
+            DisplayMode? current = DisplayModes.Current(monitor.DeviceName);
+            var modes = DisplayModes.List(monitor.DeviceName);
+            check(current != null && modes.Contains(current.Value),
+                $"{monitor.DeviceName}: current mode {current} is among its {modes.Count} modes");
+            if (current is not DisplayMode mode)
+                continue;
+
+            var request = new ResolutionRequest(mode.Width, mode.Height, mode.Interlaced, mode.Frequency);
+            DisplayMode? selected = DisplayModes.SelectBest(modes, request, current);
+            check(selected == mode, $"{monitor.DeviceName}: {request} selects {selected}");
+            int result = DisplayModes.Change(monitor.DeviceName, mode, User32.CDS_TEST);
+            check(result == User32.DISP_CHANGE_SUCCESSFUL, $"{monitor.DeviceName}: driver accepts {mode} (CDS_TEST: {DisplayModes.DescribeResult(result)})");
+
+            var other = modes.Where(m => m.BitsPerPixel == 32 && (m.Width != mode.Width || m.Height != mode.Height))
+                             .OrderBy(m => Math.Abs(m.Width - mode.Width / 2)).FirstOrDefault();
+            if (other != default)
+            {
+                result = DisplayModes.Change(monitor.DeviceName, other, User32.CDS_TEST);
+                check(result == User32.DISP_CHANGE_SUCCESSFUL, $"{monitor.DeviceName}: driver would accept {other} (CDS_TEST: {DisplayModes.DescribeResult(result)})");
+            }
+        }
     }
 
     private static void RenderTests(IntPtr hwnd, string outputDirectory, Action<bool, string> check)
@@ -105,28 +137,83 @@ internal static class SelfTest
                 continue;
             }
             renderer.UpdateSource(frame.Texture, content.X, content.Y, content.Width, content.Height);
-            using var output = renderer.RenderToBitmap(1920, 240, new RectangleF(0, 0, 1920, 240));
+            using var output = renderer.RenderToBitmap(1920, 240, Fill(content, 1920, 240));
             output.Save(Path.Combine(outputDirectory, $"{shader}_1920x240.png"));
             check(VerifyPattern(output, new Rectangle(0, 0, 1920, 240), out string detail), $"{shader}: 320x240 -> 1920x240 pattern {detail}");
         }
 
         renderer.LoadShader(ShaderLibrary.DefaultShader);
         renderer.UpdateSource(frame.Texture, content.X, content.Y, content.Width, content.Height);
-        using (var output = renderer.RenderToBitmap(1280, 240, new RectangleF(0, 0, 1280, 240)))
+        using (var output = renderer.RenderToBitmap(1280, 240, Fill(content, 1280, 240)))
         {
             output.Save(Path.Combine(outputDirectory, "Area_1280x240.png"));
             check(VerifyPattern(output, new Rectangle(0, 0, 1280, 240), out string detail), $"Area: 320x240 -> 1280x240 pattern {detail}");
         }
 
-        var aspect = new ScalingOptions { Mode = ScaleMode.KeepAspect, DisplayAspect = "4:3", SourceAspect = "16:9" };
-        RectangleF letterbox = Geometry.ComputeDestination(aspect, 320, 240, 1920, 240);
-        check(letterbox == new RectangleF(0, 30, 1920, 180), $"16:9 source on a 4:3 1920x240 screen is letterboxed: {letterbox}");
-        using (var output = renderer.RenderToBitmap(1920, 240, letterbox))
-            output.Save(Path.Combine(outputDirectory, "Area_1920x240_16x9_letterbox.png"));
+        // Aspect ratio formats (linuxloader's) of the 320x240 pattern on a 1920x240 super-resolution
+        // screen ("auto" = physically 4:3, so one output pixel is 1/6 as wide as high).
+        var yellow = TestPatternForm.Bars[1];
+        var cyan = TestPatternForm.Bars[2];
+        var green = TestPatternForm.Bars[3];
+        var white = TestPatternForm.Bars[0];
+        var red = TestPatternForm.LineColour(121);
+        var formats = new (string Name, ScalingOptions Options, RectangleF Expected, (int X, int Y, Color Colour)[] Pixels)[]
+        {
+            ("original_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect }, new RectangleF(0, 0, 1920, 240), []),
+            // 16:9 frame letterboxed on the CRT, the 4:3 picture whole inside at its shape.
+            ("16x9_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "16:9" }, new RectangleF(240, 30, 1440, 180), []),
+            ("16x9_stretch-mode", new ScalingOptions { Mode = ScaleMode.Stretch, AspectRatio = "16:9" }, new RectangleF(240, 0, 1440, 240), []),
+            // 16:9 frame the picture fills, deformed.
+            ("16x9-stretch_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "16:9_STRETCH" }, new RectangleF(0, 30, 1920, 180), []),
+            // 16:9 frame the picture fills at its shape, cut above and below: rows 30..209 kept,
+            // so the colour bars (rows 0..119) end at screen row 119.
+            ("16x9-crop_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "16:9_CROP" }, new RectangleF(0, 30, 1920, 180),
+                [(360, 118, yellow), (360, 121, red)]),
+            // Same, kept part at the bottom (rows 60..239): the bars end at screen row 89.
+            ("16x9-crop-bottom_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "16:9_CROP", CropPosition = 100 },
+                new RectangleF(0, 30, 1920, 180), [(360, 31, yellow), (360, 118, white)]),
+            // 1:1 frame (1440x240 on the CRT) cutting the sides of the 4:3 picture; bent: the
+            // undistorted middle shows source columns 88..232 at 6 screen pixels each, and the edges
+            // still show the first and last bars that the plain crop cuts away.
+            ("1x1-crop_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "1:1_crop" }, new RectangleF(240, 0, 1440, 240),
+                [(242, 60, yellow)]),
+            ("1x1-crop-barrel_fit", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "1:1_crop", CropBarrel = true },
+                new RectangleF(240, 0, 1440, 240), [(242, 60, white), (600, 60, cyan), (840, 60, green), (1677, 60, TestPatternForm.Bars[7])]),
+        };
+        foreach (var (name, format, expected, pixels) in formats)
+        {
+            var placement = Geometry.ComputePlacement(format, content.Width, content.Height, 1920, 240);
+            using var output = renderer.RenderToBitmap(1920, 240, placement);
+            output.Save(Path.Combine(outputDirectory, $"Area_1920x240_{name}.png"));
+            RectangleF dest = placement.Dest;
+            bool placed = dest == expected;
+            bool drawn = pixels.Length > 0 || VerifyPattern(output, Rectangle.Round(dest), out _);
+            var wrong = pixels.Where(p => !Near(output.GetPixel(p.X, p.Y), p.Colour))
+                              .Select(p => $"({p.X},{p.Y}) = {Describe(output.GetPixel(p.X, p.Y))} instead of {Describe(p.Colour)}").ToList();
+            bool bars = IsBlackOutside(output, dest);
+            check(placed && drawn && wrong.Count == 0 && bars,
+                $"aspect {format.AspectRatio}, {format.Mode}: picture at {dest} (expected {expected}), "
+                + $"pixels {(drawn && wrong.Count == 0 ? "OK" : string.Join("; ", wrong.DefaultIfEmpty("pattern wrong")))}, black bars {(bars ? "OK" : "missing")}");
+        }
+    }
 
-        var pillarbox = new ScalingOptions { Mode = ScaleMode.KeepAspect, DisplayAspect = "4:3", SourceAspect = "auto" };
-        RectangleF fit = Geometry.ComputeDestination(pillarbox, 320, 240, 1920, 240);
-        check(fit == new RectangleF(0, 0, 1920, 240), $"4:3 source on a 4:3 1920x240 screen fills it: {fit}");
+    private static Placement Fill(Rectangle content, int width, int height)
+        => new(new RectangleF(0, 0, width, height), new Rectangle(0, 0, content.Width, content.Height), null);
+
+    /// <summary>Checks the middle of each black bar around <paramref name="picture"/>.</summary>
+    private static bool IsBlackOutside(Bitmap image, RectangleF picture)
+    {
+        var samples = new List<Point>();
+        int centreX = (int)(picture.X + picture.Width / 2), centreY = (int)(picture.Y + picture.Height / 2);
+        if (picture.Top >= 2)
+            samples.Add(new Point(centreX, (int)picture.Top / 2));
+        if (picture.Bottom <= image.Height - 2)
+            samples.Add(new Point(centreX, (int)(picture.Bottom + image.Height) / 2));
+        if (picture.Left >= 2)
+            samples.Add(new Point((int)picture.Left / 2, centreY));
+        if (picture.Right <= image.Width - 2)
+            samples.Add(new Point((int)(picture.Right + image.Width) / 2, centreY));
+        return samples.All(p => Near(image.GetPixel(p.X, p.Y), Color.Black));
     }
 
     /// <summary>Runs a real scaling session (preview window or full-screen overlay) and checks the screen.</summary>

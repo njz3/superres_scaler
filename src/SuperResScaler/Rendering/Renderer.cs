@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using SharpGen.Runtime;
+using SuperResScaler.Engine;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -40,6 +41,21 @@ internal sealed class Renderer : IDisposable
         }
         """;
 
+    // The CROP_BARREL strip: positions in clip space of the destination viewport, texture coordinates.
+    private const string StripVertexShaderSource = """
+        struct VSOutput { float4 Position : SV_POSITION; float2 TexCoord : TEXCOORD0; };
+        VSOutput main(float2 position : POSITION, float2 texCoord : TEXCOORD0)
+        {
+            VSOutput o;
+            o.Position = float4(position, 0, 1);
+            o.TexCoord = texCoord;
+            return o;
+        }
+        """;
+
+    private const int StripVertexSize = 4 * sizeof(float);
+    private const int MaxStripVertices = 4 * (BarrelStrip.StepsPerEdge + 1);
+
     // Used when the Shaders folder is missing or the selected shader does not compile.
     private const string FallbackPixelShaderSource = """
         Texture2D<float4> Source : register(t0);
@@ -55,13 +71,24 @@ internal sealed class Renderer : IDisposable
 
     private readonly string _profileSuffix;
     private readonly ID3D11VertexShader _vertexShader;
+    private readonly ID3D11VertexShader _stripVertexShader;
+    private readonly ID3D11InputLayout _stripLayout;
+    private readonly ID3D11Buffer _stripBuffer;
+    private readonly ID3D11RasterizerState _rasterizerState;
     private readonly ID3D11SamplerState _pointSampler;
     private readonly ID3D11SamplerState _linearSampler;
     private readonly ID3D11Buffer _constantBuffer;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private ID3D11PixelShader? _pixelShader;
-    private ID3D11Texture2D? _sourceTexture;
-    private ID3D11ShaderResourceView? _sourceView;
+
+    // The captured region (UpdateSource), and the part of it the aspect ratio keeps (_crop formats).
+    private ID3D11Texture2D? _capturedTexture;
+    private ID3D11ShaderResourceView? _capturedView;
+    private ID3D11Texture2D? _croppedTexture;
+    private ID3D11ShaderResourceView? _croppedView;
+    private Rectangle _croppedFrom;
+    private long _capturedVersion;
+    private long _croppedVersion = -1;
     private uint _frameCount;
 
     public Renderer()
@@ -92,6 +119,16 @@ internal sealed class Renderer : IDisposable
         }
 
         _vertexShader = Device.CreateVertexShader(Compile(VertexShaderSource, "FullscreenTriangle", "vs" + _profileSuffix));
+        byte[] stripBytecode = Compile(StripVertexShaderSource, "BarrelStrip", "vs" + _profileSuffix);
+        _stripVertexShader = Device.CreateVertexShader(stripBytecode);
+        _stripLayout = Device.CreateInputLayout(
+        [
+            new InputElementDescription("POSITION", 0, Format.R32G32_Float, 0, 0),
+            new InputElementDescription("TEXCOORD", 0, Format.R32G32_Float, 2 * sizeof(float), 0),
+        ], stripBytecode);
+        _stripBuffer = Device.CreateBuffer(new BufferDescription((uint)(MaxStripVertices * StripVertexSize),
+            BindFlags.VertexBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write));
+        _rasterizerState = Device.CreateRasterizerState(RasterizerDescription.CullNone);
         _pointSampler = Device.CreateSamplerState(SamplerDescription.PointClamp);
         _linearSampler = Device.CreateSamplerState(SamplerDescription.LinearClamp);
         _constantBuffer = Device.CreateBuffer(new BufferDescription((uint)Marshal.SizeOf<ShaderConstants>(), BindFlags.ConstantBuffer));
@@ -102,9 +139,10 @@ internal sealed class Renderer : IDisposable
 
     public string? ShaderName { get; private set; }
 
-    public int SourceWidth { get; private set; }
-    public int SourceHeight { get; private set; }
-    public bool HasSource => _sourceView != null;
+    /// <summary>Size of the captured region given to <see cref="UpdateSource"/>.</summary>
+    public int CapturedWidth { get; private set; }
+    public int CapturedHeight { get; private set; }
+    public bool HasSource => _capturedView != null;
 
     /// <summary>Compiles Shaders/&lt;name&gt;.hlsl. Throws on error and keeps the current shader.</summary>
     public void LoadShader(string name)
@@ -149,34 +187,64 @@ internal sealed class Renderer : IDisposable
         }
     }
 
-    /// <summary>Copies the given region of a captured texture into the shader's source texture.</summary>
+    /// <summary>Copies the given region of a captured texture: the picture to scale.</summary>
     public void UpdateSource(ID3D11Texture2D texture, int x, int y, int width, int height)
     {
-        if (_sourceTexture == null || width != SourceWidth || height != SourceHeight)
+        if (_capturedTexture == null || width != CapturedWidth || height != CapturedHeight)
         {
-            _sourceView?.Dispose();
-            _sourceTexture?.Dispose();
-            _sourceTexture = Device.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)width, (uint)height, 1, 1));
-            _sourceView = Device.CreateShaderResourceView(_sourceTexture);
-            SourceWidth = width;
-            SourceHeight = height;
+            _capturedView?.Dispose();
+            _capturedTexture?.Dispose();
+            _capturedTexture = Device.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)width, (uint)height, 1, 1));
+            _capturedView = Device.CreateShaderResourceView(_capturedTexture);
+            CapturedWidth = width;
+            CapturedHeight = height;
         }
-        Context.CopySubresourceRegion(_sourceTexture, 0, 0, 0, 0, texture, 0, new Box(x, y, 0, x + width, y + height, 1));
+        Context.CopySubresourceRegion(_capturedTexture, 0, 0, 0, 0, texture, 0, new Box(x, y, 0, x + width, y + height, 1));
+        _capturedVersion++;
     }
 
-    /// <summary>Clears the target to black and draws the source into <paramref name="dest"/> (target pixels).</summary>
-    public void Draw(ID3D11RenderTargetView target, RectangleF dest)
+    /// <summary>
+    /// The texture the shader reads for <paramref name="part"/> of the captured picture: the
+    /// captured one when it is whole, else a copy of the part, so that shaders clamp at its edges.
+    /// </summary>
+    private ID3D11ShaderResourceView SourceView(Rectangle part)
+    {
+        if (part == new Rectangle(0, 0, CapturedWidth, CapturedHeight))
+            return _capturedView!;
+        if (_croppedTexture == null || part.Size != _croppedFrom.Size)
+        {
+            _croppedView?.Dispose();
+            _croppedTexture?.Dispose();
+            _croppedTexture = Device.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)part.Width, (uint)part.Height, 1, 1));
+            _croppedView = Device.CreateShaderResourceView(_croppedTexture);
+            _croppedVersion = -1;
+        }
+        if (_croppedVersion != _capturedVersion || part != _croppedFrom)
+        {
+            Context.CopySubresourceRegion(_croppedTexture, 0, 0, 0, 0, _capturedTexture!, 0,
+                new Box(part.Left, part.Top, 0, part.Right, part.Bottom, 1));
+            _croppedFrom = part;
+            _croppedVersion = _capturedVersion;
+        }
+        return _croppedView!;
+    }
+
+    /// <summary>Clears the target to black and draws the picture where <paramref name="placement"/> says (target pixels).</summary>
+    public void Draw(ID3D11RenderTargetView target, Placement placement)
     {
         Context.ClearRenderTargetView(target, new Color4(0f, 0f, 0f, 1f));
-        if (_sourceView == null || _pixelShader == null || dest.Width < 1 || dest.Height < 1)
+        RectangleF dest = placement.Dest;
+        Rectangle part = Rectangle.Intersect(placement.Source, new Rectangle(0, 0, CapturedWidth, CapturedHeight));
+        if (_capturedView == null || _pixelShader == null || dest.Width < 1 || dest.Height < 1 || part.Width < 1 || part.Height < 1)
             return;
+        var sourceView = SourceView(part);
 
         var constants = new ShaderConstants
         {
-            SourceWidth = SourceWidth,
-            SourceHeight = SourceHeight,
-            InvSourceWidth = 1f / SourceWidth,
-            InvSourceHeight = 1f / SourceHeight,
+            SourceWidth = part.Width,
+            SourceHeight = part.Height,
+            InvSourceWidth = 1f / part.Width,
+            InvSourceHeight = 1f / part.Height,
             OutputWidth = dest.Width,
             OutputHeight = dest.Height,
             InvOutputWidth = 1f / dest.Width,
@@ -190,16 +258,66 @@ internal sealed class Renderer : IDisposable
 
         Context.OMSetRenderTargets(target);
         Context.RSSetViewport(new Viewport(dest.X, dest.Y, dest.Width, dest.Height));
-        Context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        Context.IASetInputLayout(null);
-        Context.VSSetShader(_vertexShader);
+        Context.RSSetState(_rasterizerState);
         Context.PSSetShader(_pixelShader);
-        Context.PSSetShaderResource(0, _sourceView);
+        Context.PSSetShaderResource(0, sourceView);
         Context.PSSetSampler(0, _pointSampler);
         Context.PSSetSampler(1, _linearSampler);
         Context.PSSetConstantBuffer(0, _constantBuffer);
-        Context.Draw(3, 0);
+        if (placement.Barrel is { } barrel)
+        {
+            DrawStrip(barrel);
+        }
+        else
+        {
+            Context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+            Context.IASetInputLayout(null);
+            Context.VSSetShader(_vertexShader);
+            Context.Draw(3, 0);
+        }
         Context.PSSetShaderResource(0, null!);
+    }
+
+    /// <summary>
+    /// The picture bent along a CROP_BARREL strip, as linuxloader's blitPresentBarrel: one pair of
+    /// vertices across the frame per strip point, the texture coordinate following the barrel.
+    /// </summary>
+    private unsafe void DrawStrip(BarrelStrip barrel)
+    {
+        var points = barrel.Points;
+        int vertexCount = Math.Min(points.Count * 2, MaxStripVertices);
+        MappedSubresource mapped = Context.Map(_stripBuffer, MapMode.WriteDiscard);
+        try
+        {
+            var vertices = (float*)mapped.DataPointer;
+            for (int i = 0; i < vertexCount / 2; i++)
+            {
+                float frame = points[i].X, picture = points[i].Y;
+                float* v = vertices + i * 8;
+                if (barrel.Horizontal) // left to right: top then bottom vertex
+                {
+                    float x = frame * 2 - 1;
+                    v[0] = x; v[1] = 1; v[2] = picture; v[3] = 0;
+                    v[4] = x; v[5] = -1; v[6] = picture; v[7] = 1;
+                }
+                else // top to bottom: left then right vertex
+                {
+                    float y = 1 - frame * 2;
+                    v[0] = -1; v[1] = y; v[2] = 0; v[3] = picture;
+                    v[4] = 1; v[5] = y; v[6] = 1; v[7] = picture;
+                }
+            }
+        }
+        finally
+        {
+            Context.Unmap(_stripBuffer, 0);
+        }
+
+        Context.IASetPrimitiveTopology(PrimitiveTopology.TriangleStrip);
+        Context.IASetInputLayout(_stripLayout);
+        Context.IASetVertexBuffer(0, _stripBuffer, StripVertexSize);
+        Context.VSSetShader(_stripVertexShader);
+        Context.Draw((uint)vertexCount, 0);
     }
 
     /// <summary>Synchronously copies a texture region to CPU memory as tightly packed BGRA rows.</summary>
@@ -225,12 +343,12 @@ internal sealed class Renderer : IDisposable
     }
 
     /// <summary>Renders into an off-screen target and returns the result (used by the self-test).</summary>
-    public Bitmap RenderToBitmap(int width, int height, RectangleF dest)
+    public Bitmap RenderToBitmap(int width, int height, Placement placement)
     {
         var desc = new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)width, (uint)height, 1, 1, BindFlags.RenderTarget);
         using var target = Device.CreateTexture2D(desc);
         using var view = Device.CreateRenderTargetView(target);
-        Draw(view, dest);
+        Draw(view, placement);
         return ToBitmap(ReadPixels(target, 0, 0, width, height), width, height);
     }
 
@@ -257,9 +375,15 @@ internal sealed class Renderer : IDisposable
     {
         Context.ClearState();
         Context.Flush();
-        _sourceView?.Dispose();
-        _sourceTexture?.Dispose();
+        _croppedView?.Dispose();
+        _croppedTexture?.Dispose();
+        _capturedView?.Dispose();
+        _capturedTexture?.Dispose();
         _pixelShader?.Dispose();
+        _stripBuffer.Dispose();
+        _stripLayout.Dispose();
+        _stripVertexShader.Dispose();
+        _rasterizerState.Dispose();
         _constantBuffer.Dispose();
         _linearSampler.Dispose();
         _pointSampler.Dispose();

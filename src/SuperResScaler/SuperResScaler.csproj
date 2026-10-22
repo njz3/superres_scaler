@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SuperResScaler.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Shaders are compiled at runtime: users can edit them or add their own. -->
     <None Update="Shaders\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

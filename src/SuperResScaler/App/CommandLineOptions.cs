@@ -28,18 +28,28 @@ internal sealed partial class CommandLineOptions
 
         Options (remplacent celles du profil) :
           --shader <nom>             Area, Nearest, SharpBilinear, LinearX_NearestY, Bilinear...
-          --mode stretch|aspect      étirer en plein écran / conserver le ratio
-          --display-aspect 4:3       ratio physique de l'écran
-          --source-aspect auto|16:9  ratio de l'image source (mode aspect)
+          --mode stretch|aspect      plein écran étiré / au ratio avec bandes noires
+                                     (fullscreen_stretch / fullscreen acceptés)
+          --aspect <format>          comme ASPECT_RATIO du linuxloader : original (forme de
+                                     la fenêtre), 4:3 / 16:9 / 4:3_letterbox (image entière à
+                                     sa forme), 4:3_stretch (déformée), 4:3_crop (rognée)
+          --crop-position <n>        _crop : partie gardée, -100 gauche/haut … 0 … 100
+          --barrel                   _crop : courbe les bords au lieu de les couper
+          --barrel-center <%>        milieu non déformé (défaut 60)
+          --barrel-radius <%>        rayon du cylindre (défaut 50)
+          --display-aspect auto|4:3  forme physique de l'écran (auto : 4:3 en super-résolution)
           --crop g,h,d,b             recadrage manuel en pixels
           --autocrop                 recadrage automatique des bandes noires
           --window                   capture la fenêtre entière (pas seulement la zone client)
           --cursor                   capture le curseur
           --no-vsync                 désactive la synchro verticale
           --monitor <n>              écran de sortie (1..N, 0 = celui de la fenêtre)
+          --resolution 1920x240@60   mode d'affichage pendant la mise à l'échelle (aussi
+                                     1280x480i) ; la résolution d'origine revient à l'arrêt
           --preview [LxH]            fenêtre de prévisualisation au lieu du plein écran
 
         Diagnostic :
+          --list-modes [n]           liste les modes d'affichage (de l'écran n, sinon de tous)
           --selftest <dossier>       rend une mire avec chaque shader et écrit des PNG + un rapport
           --selftest-overlay         ajoute un test de l'overlay plein écran (~2 s)
         """;
@@ -48,6 +58,8 @@ internal sealed partial class CommandLineOptions
     public bool Tray { get; private set; }
     public string? SelfTestDirectory { get; private set; }
     public bool SelfTestOverlay { get; private set; }
+    public bool ListModes { get; private set; }
+    public int ListModesMonitor { get; private set; }
 
     public string? Process { get; private set; }
     public string? Title { get; private set; }
@@ -120,10 +132,11 @@ internal sealed partial class CommandLineOptions
                 case "--mode":
                 {
                     string v = Value().ToLowerInvariant();
+                    // linuxloader's DISPLAY_MODE names are accepted too.
                     ScaleMode mode = v switch
                     {
-                        "stretch" or "fill" => ScaleMode.Stretch,
-                        "aspect" or "keepaspect" => ScaleMode.KeepAspect,
+                        "stretch" or "fill" or "fullscreen_stretch" => ScaleMode.Stretch,
+                        "aspect" or "keepaspect" or "fit" or "fullscreen" => ScaleMode.KeepAspect,
                         _ => throw new ArgumentException($"Mode inconnu : {v} (stretch ou aspect)"),
                     };
                     o._overrides.Add(s => s.Mode = mode);
@@ -132,17 +145,36 @@ internal sealed partial class CommandLineOptions
                 case "--display-aspect":
                 {
                     string v = Value();
-                    if (!AspectRatio.TryParse(v, out _))
-                        throw new ArgumentException($"Ratio invalide : {v}");
+                    if (!v.Equals("auto", StringComparison.OrdinalIgnoreCase) && !Ratio.TryParse(v, out _))
+                        throw new ArgumentException($"Ratio d'écran invalide : {v} (auto, 4:3, 16:9…)");
                     o._overrides.Add(s => s.DisplayAspect = v);
                     break;
                 }
-                case "--source-aspect":
+                case "--aspect":
                 {
                     string v = Value();
-                    if (!AspectRatio.IsAuto(v) && !AspectRatio.TryParse(v, out _))
-                        throw new ArgumentException($"Ratio invalide : {v}");
-                    o._overrides.Add(s => s.SourceAspect = v);
+                    if (!PictureAspect.TryParse(v, out _))
+                        throw new ArgumentException($"Ratio d'aspect invalide : {v} (original, 4:3, 16:9, 4:3_letterbox…)");
+                    o._overrides.Add(s => s.AspectRatio = v);
+                    break;
+                }
+                case "--crop-position":
+                {
+                    int position = (int)ParseSigned(arg, Value(), -100, 100);
+                    o._overrides.Add(s => s.CropPosition = position);
+                    break;
+                }
+                case "--barrel": o._overrides.Add(s => s.CropBarrel = true); break;
+                case "--barrel-center":
+                {
+                    int center = (int)ParseSigned(arg, Value(), 0, 100);
+                    o._overrides.Add(s => s.BarrelCenter = center);
+                    break;
+                }
+                case "--barrel-radius":
+                {
+                    int radius = (int)ParseSigned(arg, Value(), 1, 1000);
+                    o._overrides.Add(s => s.BarrelRadius = radius);
                     break;
                 }
                 case "--crop":
@@ -156,6 +188,23 @@ internal sealed partial class CommandLineOptions
                 case "--cursor": o._overrides.Add(s => s.CaptureCursor = true); break;
                 case "--no-vsync": o._overrides.Add(s => s.VSync = false); break;
                 case "--monitor": { int m = (int)ParseDouble(arg, Value()); o._overrides.Add(s => s.Monitor = m); break; }
+                case "--resolution":
+                case "--res":
+                {
+                    string v = Value();
+                    if (!ResolutionRequest.IsUnchanged(v) && !ResolutionRequest.TryParse(v, out _))
+                        throw new ArgumentException($"Résolution invalide : {v} (ex. 1920x240, 1920x240@60, 1280x480i)");
+                    o._overrides.Add(s => s.Resolution = v);
+                    break;
+                }
+                case "--list-modes":
+                    o.ListModes = true;
+                    if (i + 1 < args.Length && int.TryParse(args[i + 1], out int listMonitor))
+                    {
+                        o.ListModesMonitor = listMonitor;
+                        i++;
+                    }
+                    break;
                 case "--preview":
                 {
                     int? w = null, h = null;
@@ -184,6 +233,11 @@ internal sealed partial class CommandLineOptions
         => double.TryParse(value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double result) && result >= 0
             ? result
             : throw new ArgumentException($"Nombre invalide pour {name} : {value}");
+
+    private static double ParseSigned(string name, string value, double min, double max)
+        => double.TryParse(value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double result) && result >= min && result <= max
+            ? result
+            : throw new ArgumentException($"Valeur invalide pour {name} : {value} ({min} à {max})");
 
     private static IntPtr ParseHandle(string value)
     {

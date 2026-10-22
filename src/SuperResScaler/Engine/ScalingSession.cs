@@ -36,6 +36,8 @@ internal sealed class ScalingSession
     private OverlayWindow? _overlay;
     private SwapChainPresenter? _presenter;
     private WindowCapture? _capture;
+    private DisplayModeChange? _displayChange;
+    private string? _monitorDevice;
     private Rectangle _outputBounds;
     private Rectangle _lastRegion;
     private long _capturedFrames;
@@ -141,6 +143,10 @@ internal sealed class ScalingSession
         if (ActiveShader == Renderer.FallbackShaderName)
             _onMessage?.Invoke($"Shader « {_options.Shader} » indisponible, nearest intégré utilisé (voir le log)");
 
+        // The output monitor is chosen once: a mode change must not make it move to another one.
+        _monitorDevice = PickMonitor().DeviceName;
+        ApplyResolution();
+
         _outputBounds = ResolveOutputBounds();
         _overlay = new OverlayWindow(_outputBounds, _options.Preview);
         _presenter = new SwapChainPresenter(_renderer, _overlay.Handle, _outputBounds.Width, _outputBounds.Height);
@@ -190,8 +196,8 @@ internal sealed class ScalingSession
                     hasImage = true;
             }
 
-            var dest = Geometry.ComputeDestination(_options, renderer.SourceWidth, renderer.SourceHeight, presenter.Width, presenter.Height);
-            renderer.Draw(presenter.RenderTarget, dest);
+            var placement = Geometry.ComputePlacement(_options, renderer.CapturedWidth, renderer.CapturedHeight, presenter.Width, presenter.Height);
+            renderer.Draw(presenter.RenderTarget, placement);
             presenter.Present(_options.VSync);
 
             if (hasImage && !overlay.IsVisible)
@@ -247,15 +253,46 @@ internal sealed class ScalingSession
         }
         if (previous.CaptureCursor != options.CaptureCursor)
             _capture!.SetCursorCapture(options.CaptureCursor);
+        if (!string.Equals(previous.Resolution, options.Resolution, StringComparison.OrdinalIgnoreCase))
+            _onMessage?.Invoke("Nouvelle résolution : appliquée au prochain démarrage de la mise à l'échelle");
         if (previous.AutoCrop != options.AutoCrop || previous.ClientAreaOnly != options.ClientAreaOnly
             || previous.CropLeft != options.CropLeft || previous.CropTop != options.CropTop
             || previous.CropRight != options.CropRight || previous.CropBottom != options.CropBottom)
             _blackBars.Reset();
     }
 
+    /// <summary>Switches the output monitor to the configured mode (full-screen output only).</summary>
+    private void ApplyResolution()
+    {
+        if (ResolutionRequest.IsUnchanged(_options.Resolution))
+            return;
+        if (_options.Preview)
+        {
+            Log.Info($"Preview: resolution {_options.Resolution} not applied");
+            return;
+        }
+        if (!ResolutionRequest.TryParse(_options.Resolution, out var request))
+        {
+            _onMessage?.Invoke($"Résolution invalide : {_options.Resolution} (ex. 1920x240@60)");
+            return;
+        }
+        try
+        {
+            _displayChange = DisplayModeChange.Apply(_monitorDevice!, request);
+            if (_displayChange != null)
+                _onMessage?.Invoke($"Écran en {_displayChange.Mode}, la résolution d'origine reviendra à l'arrêt");
+        }
+        catch (Exception ex)
+        {
+            // Keep scaling at the current resolution rather than leaving the cabinet without a picture.
+            Log.Error("Display mode change failed", ex);
+            _onMessage?.Invoke(ex.Message);
+        }
+    }
+
     private Rectangle ResolveOutputBounds()
     {
-        RECT monitor = PickMonitor().Bounds;
+        RECT monitor = (MonitorInfo.GetAll().FirstOrDefault(m => m.DeviceName == _monitorDevice) ?? PickMonitor()).Bounds;
         if (_options.Preview)
             return new Rectangle(monitor.Left + 40, monitor.Top + 40, Math.Max(64, _options.PreviewWidth), Math.Max(16, _options.PreviewHeight));
         return Rectangle.FromLTRB(monitor.Left, monitor.Top, monitor.Right, monitor.Bottom);
@@ -293,10 +330,13 @@ internal sealed class ScalingSession
         TryDispose(_renderer);
         TryDispose(_overlay);
         OverlayWindow.PumpMessages();
+        // Last, once the overlay is gone: the desktop's resolution from before the scaling.
+        TryDispose(_displayChange);
         _capture = null;
         _presenter = null;
         _renderer = null;
         _overlay = null;
+        _displayChange = null;
     }
 
     private static void TryDispose(IDisposable? disposable)

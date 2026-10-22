@@ -64,6 +64,51 @@ internal struct WNDCLASSEX
     public IntPtr hIconSm;
 }
 
+/// <summary>DEVMODEW, display fields only (the printer fields are kept for the layout).</summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct DEVMODE
+{
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string dmDeviceName;
+    public ushort dmSpecVersion;
+    public ushort dmDriverVersion;
+    public ushort dmSize;
+    public ushort dmDriverExtra;
+    public uint dmFields;
+    public int dmPositionX;
+    public int dmPositionY;
+    public uint dmDisplayOrientation;
+    public uint dmDisplayFixedOutput;
+    public short dmColor;
+    public short dmDuplex;
+    public short dmYResolution;
+    public short dmTTOption;
+    public short dmCollate;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string dmFormName;
+    public ushort dmLogPixels;
+    public uint dmBitsPerPel;
+    public uint dmPelsWidth;
+    public uint dmPelsHeight;
+    public uint dmDisplayFlags;
+    public uint dmDisplayFrequency;
+    public uint dmICMMethod;
+    public uint dmICMIntent;
+    public uint dmMediaType;
+    public uint dmDitherType;
+    public uint dmReserved1;
+    public uint dmReserved2;
+    public uint dmPanningWidth;
+    public uint dmPanningHeight;
+
+    public static DEVMODE Create() => new()
+    {
+        dmDeviceName = string.Empty,
+        dmFormName = string.Empty,
+        dmSize = (ushort)Marshal.SizeOf<DEVMODE>(),
+    };
+}
+
 internal delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
 internal static class User32
@@ -171,6 +216,27 @@ internal static class User32
     [DllImport(Dll)] public static extern bool TranslateMessage(ref MSG msg);
     [DllImport(Dll)] public static extern IntPtr DispatchMessage(ref MSG msg);
 
+    public const int ENUM_CURRENT_SETTINGS = -1;
+    public const uint DM_BITSPERPEL = 0x00040000;
+    public const uint DM_PELSWIDTH = 0x00080000;
+    public const uint DM_PELSHEIGHT = 0x00100000;
+    public const uint DM_DISPLAYFLAGS = 0x00200000;
+    public const uint DM_DISPLAYFREQUENCY = 0x00400000;
+    public const uint DM_INTERLACED = 0x00000002;
+    public const uint CDS_TEST = 0x00000002;
+    public const uint CDS_FULLSCREEN = 0x00000004;
+    public const int DISP_CHANGE_SUCCESSFUL = 0;
+
+    [DllImport(Dll, CharSet = CharSet.Unicode)]
+    public static extern bool EnumDisplaySettings(string deviceName, int modeNumber, ref DEVMODE mode);
+
+    [DllImport(Dll, CharSet = CharSet.Unicode)]
+    public static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE mode, IntPtr hwnd, uint flags, IntPtr param);
+
+    /// <summary>With a null mode: back to the mode stored in the registry.</summary>
+    [DllImport(Dll, CharSet = CharSet.Unicode)]
+    public static extern int ChangeDisplaySettingsEx(string deviceName, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
+
     [DllImport(Dll)]
     public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc callback,
         uint processId, uint threadId, uint flags);
@@ -192,6 +258,22 @@ internal static class Kernel32
     [DllImport(Dll, CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int size);
     [DllImport(Dll)] public static extern bool AttachConsole(int processId);
+    [DllImport(Dll)] public static extern IntPtr GetStdHandle(int handle);
+    [DllImport(Dll)] public static extern uint GetFileType(IntPtr handle);
+
+    public const int STD_OUTPUT_HANDLE = -11;
+    public const uint FILE_TYPE_DISK = 1;
+    public const uint FILE_TYPE_PIPE = 3;
+
+    /// <summary>True when the standard output goes to a file or a pipe ("> modes.txt", "| more").</summary>
+    public static bool IsOutputRedirected()
+    {
+        IntPtr handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+            return false;
+        uint type = GetFileType(handle);
+        return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+    }
 }
 
 internal static class Dwmapi
