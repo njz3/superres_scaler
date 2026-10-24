@@ -50,6 +50,23 @@ internal sealed record WindowInfo(IntPtr Handle, string Title, string ClassName,
         return User32.GetWindowRect(hwnd, out var rect) && rect.Width > 0 && rect.Height > 0;
     }
 
+    /// <summary>The non-empty titles of a window's child windows (some emulators title a child, not the frame).</summary>
+    public static List<string> GetChildTitles(IntPtr hwnd)
+    {
+        var titles = new List<string>();
+        User32.EnumChildWindows(hwnd, (child, _) =>
+        {
+            string title = GetTitle(child);
+            if (title.Length > 0)
+                titles.Add(title);
+            return titles.Count < 256;
+        }, IntPtr.Zero);
+        return titles;
+    }
+
+    /// <summary>Client area in pixels (0 when the window is gone).</summary>
+    public int ClientArea => User32.GetClientRect(Handle, out RECT rect) ? rect.Width * rect.Height : 0;
+
     public static string GetTitle(IntPtr hwnd)
     {
         int length = User32.GetWindowTextLength(hwnd);

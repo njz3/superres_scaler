@@ -189,6 +189,7 @@ internal static class User32
     [DllImport(Dll)] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport(Dll, EntryPoint = "GetWindowLongW")] public static extern int GetWindowLong(IntPtr hWnd, int index);
     [DllImport(Dll)] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+    [DllImport(Dll)] public static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr lParam);
     [DllImport(Dll)] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
     [DllImport(Dll)] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport(Dll)] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);

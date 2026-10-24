@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>SuperResScaler</AssemblyName>
     <RootNamespace>SuperResScaler</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>SuperResScaler</Product>
     <Description>Window scaler for super-resolution CRT modes (1280x240, 1920x240...)</Description>
     <!-- Only used by self-contained single-file publishing (see README). -->

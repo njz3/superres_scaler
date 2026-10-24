@@ -29,15 +29,25 @@ public sealed class AppSettings
     /// <summary>Delay of the "scale the foreground window in N s" button.</summary>
     public int ScaleDelaySeconds { get; set; } = 3;
 
-    /// <summary>Profiles marked AutoScale start automatically when their window gets the focus.</summary>
+    /// <summary>Watch the processes and windows for profiles marked AutoScale (in the tray, see WatchWhileVisible).</summary>
     public bool AutoScaleEnabled { get; set; } = true;
+
+    /// <summary>Also watch while the main window is shown (by default only when it is in the tray or minimized).</summary>
+    public bool WatchWhileVisible { get; set; }
+
+    /// <summary>Milliseconds between two scans of the windows.</summary>
+    public int WatchIntervalMs { get; set; } = 1000;
 
     public bool StartInTray { get; set; }
 
-    /// <summary>Most specific matching profile (with a title filter first), or null.</summary>
-    internal Profile? FindProfile(WindowInfo window)
-        => Profiles.Where(p => p.Matches(window))
-                   .OrderByDescending(p => !string.IsNullOrEmpty(p.TitleContains))
+    /// <summary>The close button sends the window to the tray instead of quitting.</summary>
+    public bool CloseToTray { get; set; } = true;
+
+    /// <summary>Most specific matching profile (title filter first, then an exact process name), or null.</summary>
+    internal Profile? FindProfile(WindowInfo window, bool includeChildren = false)
+        => Profiles.Where(p => p.Matches(window, includeChildren))
+                   .OrderByDescending(p => p.HasTitleFilter)
+                   .ThenBy(p => p.ProcessName.IndexOfAny(['*', '?', '|']) >= 0)
                    .FirstOrDefault();
 
     internal Profile? FindProfileByName(string name)

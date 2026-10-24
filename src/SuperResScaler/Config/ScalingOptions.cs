@@ -117,24 +117,90 @@ public sealed class Profile : ScalingOptions
 {
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Executable file name, e.g. "game.exe" (case-insensitive).</summary>
+    /// <summary>
+    /// Executable(s), as BackForceFeeder's process filter: "game.exe", wildcards "game*.exe",
+    /// alternatives "game.exe|game_dx11.exe". Case-insensitive, ".exe" optional.
+    /// </summary>
     public string ProcessName { get; set; } = string.Empty;
 
-    /// <summary>Optional: only windows whose title contains this text.</summary>
-    public string? TitleContains { get; set; }
+    /// <summary>
+    /// Optional window title filter: wildcards and "|" alternatives; a text without wildcard only
+    /// has to be contained in the title. Child windows' titles count too. Empty = any window.
+    /// </summary>
+    public string? WindowTitle { get; set; }
 
-    /// <summary>Start scaling automatically when a matching window comes to the foreground.</summary>
-    public bool AutoScale { get; set; }
+    /// <summary>Start scaling as soon as a matching window exists (while the profiles are watched).</summary>
+    public bool AutoScale { get; set; } = true;
+
+    /// <summary>Seconds a matching window must exist before scaling (games often resize right after starting).</summary>
+    public double AutoScaleDelay { get; set; } = 1;
 
     [JsonIgnore]
     public string DisplayName => string.IsNullOrEmpty(Name) ? ProcessName : Name;
 
-    internal bool Matches(WindowInfo window)
+    [JsonIgnore]
+    internal bool HasTitleFilter => !string.IsNullOrWhiteSpace(WindowTitle);
+
+    /// <summary>The process matches, and the window's title (or one of its children's) when a filter is set.</summary>
+    internal bool Matches(WindowInfo window, bool includeChildren = false)
     {
-        if (!string.Equals(ProcessName, window.ProcessName, StringComparison.OrdinalIgnoreCase))
+        if (!WindowMatcher.MatchesProcess(ProcessName, window.ProcessName))
             return false;
-        return string.IsNullOrEmpty(TitleContains)
-            || window.Title.Contains(TitleContains, StringComparison.OrdinalIgnoreCase);
+        if (WindowMatcher.MatchesTitle(WindowTitle, window.Title))
+            return true;
+        return includeChildren && WindowInfo.GetChildTitles(window.Handle).Any(t => WindowMatcher.MatchesTitle(WindowTitle, t));
+    }
+
+    public Profile Clone()
+    {
+        var copy = new Profile { Name = Name, ProcessName = ProcessName, WindowTitle = WindowTitle, AutoScale = AutoScale, AutoScaleDelay = AutoScaleDelay };
+        copy.CopyFrom(this);
+        return copy;
+    }
+}
+
+/// <summary>Process and window title filters, as BackForceFeeder's ProcessAnalyzer.</summary>
+public static class WindowMatcher
+{
+    private static readonly char[] Wildcards = ['*', '?'];
+
+    /// <summary>"game.exe", "game*", "a.exe|b.exe" against an executable name; an empty filter matches nothing.</summary>
+    public static bool MatchesProcess(string? filter, string processName)
+    {
+        if (string.IsNullOrWhiteSpace(filter) || string.IsNullOrEmpty(processName))
+            return false;
+        string name = WithoutExe(processName);
+        return Alternatives(filter).Any(pattern => Matches(WithoutExe(pattern), name, containsWhenPlain: false));
+    }
+
+    /// <summary>Wildcards and "|" alternatives; a plain text is searched in the title. An empty filter matches any title.</summary>
+    public static bool MatchesTitle(string? filter, string title)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            return true;
+        return Alternatives(filter).Any(pattern => Matches(pattern, title, containsWhenPlain: true));
+    }
+
+    private static IEnumerable<string> Alternatives(string filter)
+        => filter.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string WithoutExe(string name)
+    {
+        name = Path.GetFileName(name.Trim());
+        return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+    }
+
+    private static bool Matches(string pattern, string text, bool containsWhenPlain)
+    {
+        if (pattern.IndexOfAny(Wildcards) < 0)
+        {
+            return containsWhenPlain
+                ? text.Contains(pattern, StringComparison.OrdinalIgnoreCase)
+                : text.Equals(pattern, StringComparison.OrdinalIgnoreCase);
+        }
+        string regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+        return System.Text.RegularExpressions.Regex.IsMatch(text, regex,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 }
 

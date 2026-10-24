@@ -100,7 +100,7 @@ internal sealed class HeadlessContext : ApplicationContext
         return options;
     }
 
-    private void OnSessionEnded(string? reason)
+    private void OnSessionEnded(WindowInfo? window, string? reason)
     {
         if (_exiting)
             return;

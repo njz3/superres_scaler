@@ -51,30 +51,66 @@ dotnet publish src/SuperResScaler -c Release -r win-x64 --self-contained true -p
 
 ### Interface
 
-1. Lancer `SuperResScaler.exe`.
-2. Choisir la fenêtre du jeu dans la liste (ou utiliser **Fenêtre active dans 3 s** puis cliquer
-   sur le jeu).
-3. Régler le shader, le mode, le recadrage… Les changements sont enregistrés immédiatement et
-   appliqués en direct pendant la mise à l'échelle.
-4. **Mettre à l'échelle la fenêtre sélectionnée**. Arrêt avec le raccourci ou le bouton.
+Lancé sans paramètre, `SuperResScaler.exe` ouvre une fenêtre organisée comme celle de
+[Magpie](https://github.com/Blinue/Magpie) : un menu à gauche, et des pages de réglages en cartes.
 
-Réduire la fenêtre l'envoie dans la zone de notification.
+| Page | Contenu |
+| --- | --- |
+| **Accueil** | état de la mise à l'échelle (bouton *Arrêter*), surveillance des profils (interrupteur), raccourci, mise à l'échelle différée (*Démarrer*, puis cliquer sur le jeu), mise à l'échelle d'une fenêtre précise, journal récent |
+| **Profils → Par défaut** | réglages utilisés pour toute fenêtre sans profil |
+| **Profils → *un jeu*** | les fenêtres auxquelles le profil s'applique, puis tous les réglages de rendu et de capture du jeu |
+| **Profils → Nouveau profil** | choisir la fenêtre du jeu en cours (ou saisir son processus), un nom, et les réglages à copier |
+| **Paramètres** | zone de notification, surveillance des profils, raccourcis (modifiables), dossiers |
+| **À propos** | version, code source |
 
-### Raccourcis (modifiables dans `settings.json`)
+Les changements sont enregistrés immédiatement dans `settings.json` et appliqués en direct si le
+profil modifié est celui de la mise à l'échelle en cours. La ligne **Placement** d'un profil
+montre où l'image d'une fenêtre ouverte sera affichée avec ses réglages.
+
+### Profils de jeux
+
+Un profil stocke les réglages d'un jeu : shader, affichage, ratio d'aspect, rognage, résolution,
+recadrage, etc. Il s'applique aux fenêtres choisies avec les mêmes filtres que BackForceFeeder :
+
+- **Processus** : `game.exe` (le `.exe` est facultatif), jokers `*` et `?` (`game*.exe`),
+  alternatives séparées par `|` (`game.exe|game_dx11.exe`) ; insensible à la casse ;
+- **Titre de fenêtre** (facultatif) : un texte simple doit être contenu dans le titre ; avec des
+  jokers, le motif porte sur tout le titre ; alternatives `|`. Les titres des fenêtres enfants
+  comptent aussi (certains émulateurs titrent une fenêtre enfant).
+
+Si plusieurs profils correspondent, celui qui a un filtre de titre l'emporte, puis celui dont le
+processus est écrit sans joker.
+
+### Zone de notification et surveillance des profils
+
+Réduire la fenêtre, ou la fermer (réglage *Le bouton Fermer réduit dans la zone de notification*,
+activé par défaut), l'envoie dans la zone de notification. SuperResScaler y **surveille les
+processus et les titres de fenêtres**, comme BackForceFeeder : dès qu'une fenêtre correspond à un
+profil dont la *mise à l'échelle automatique* est activée et qu'elle existe depuis le délai du
+profil (1 s par défaut, le temps que le jeu prenne sa taille finale), la mise à l'échelle démarre
+avec ce profil. Quand le jeu se ferme, elle s'arrête (et la résolution d'origine revient), puis la
+surveillance reprend.
+
+- La recherche a lieu toutes les secondes (*Intervalle entre deux recherches*) ; les petites
+  fenêtres (moins de 160x120) et les fenêtres réduites sont ignorées ; si plusieurs fenêtres
+  correspondent, la plus grande est choisie.
+- Une mise à l'échelle arrêtée à la main (raccourci, bouton) n'est pas relancée tant que la
+  fenêtre du jeu reste ouverte.
+- Par défaut la surveillance ne tourne que lorsque la fenêtre est réduite ou dans la zone de
+  notification (pour pouvoir régler un profil sans déclencher la mise à l'échelle) ; le réglage
+  *Surveiller aussi quand cette fenêtre est affichée* la laisse toujours active.
+- Clic sur l'icône : ouvrir ; clic droit : surveiller les profils oui/non, arrêter la mise à
+  l'échelle, quitter.
+- Pour une borne : `SuperResScaler.exe --tray` (ou le réglage *Démarrer dans la zone de
+  notification*) au démarrage de Windows, avec un profil par jeu.
+
+### Raccourcis (modifiables dans Paramètres)
 
 | Raccourci | Action |
 | --- | --- |
 | `Alt+Shift+A` | démarrer la mise à l'échelle de la fenêtre active / l'arrêter |
 | `Alt+Shift+S` | shader suivant (enregistré dans le profil) |
 | `Alt+Shift+C` | oublier et refaire la détection des bandes noires |
-
-### Profils par application
-
-**Créer un profil pour cette application** associe les réglages courants à l'exécutable de la
-fenêtre sélectionnée (par ex. `game.exe`). Le profil est ensuite utilisé automatiquement pour
-cette application ; avec **Démarrer automatiquement**, la mise à l'échelle se lance dès que
-l'application passe au premier plan (il suffit de laisser SuperResScaler tourner, par exemple
-avec `--tray` au démarrage de Windows).
 
 ### Ligne de commande (front-end de borne : Attract-Mode, LaunchBox, RocketLauncher…)
 
@@ -193,7 +229,32 @@ sera affichée avec les réglages en cours.
 
 Les réglages sont dans `settings.json` à côté de l'exécutable (ou dans
 `%AppData%\SuperResScaler` si le dossier n'est pas accessible en écriture), avec le journal
-`SuperResScaler.log`.
+`SuperResScaler.log`. Exemple de profil, tel que l'interface l'écrit :
+
+```json
+{
+  "Profiles": [
+    {
+      "Name": "Daytona USA 2",
+      "ProcessName": "Supermodel.exe",
+      "WindowTitle": "Daytona",
+      "AutoScale": true,
+      "AutoScaleDelay": 1,
+      "Shader": "Nearest",
+      "Mode": "KeepAspect",
+      "AspectRatio": "4:3",
+      "Resolution": "1920x240@60"
+    }
+  ],
+  "AutoScaleEnabled": true,
+  "WatchWhileVisible": false,
+  "WatchIntervalMs": 1000,
+  "StartInTray": true,
+  "CloseToTray": true
+}
+```
+
+Les réglages absents d'un profil prennent leur valeur par défaut.
 
 ## Shaders
 
@@ -249,6 +310,7 @@ src/SuperResScaler/
   Program.cs                  point d'entrée (interface, ligne de commande, auto-test)
   App/ScalerController.cs     démarrage/arrêt, raccourcis, démarrage auto des profils
   App/HeadlessContext.cs      mode ligne de commande
+  App/ProfileWatcher.cs       surveillance des processus et fenêtres (zone de notification)
   App/CommandLineOptions.cs   analyse des arguments
   App/SelfTest.cs             auto-test de bout en bout
   Engine/ScalingSession.cs    thread de rendu : capture -> shader -> présentation
@@ -261,7 +323,9 @@ src/SuperResScaler/
   Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders
   Rendering/SwapChainPresenter.cs  swap chain flip-model basse latence
   Config/                     options, profils, settings.json
-  UI/MainForm.cs              interface WinForms
+  UI/MainForm.cs              fenêtre façon Magpie : navigation, pages, zone de notification
+  UI/Pages/                   Accueil, profil (par défaut ou jeu), Paramètres, À propos
+  UI/Controls.cs, Dialogs.cs  cartes de réglages, interrupteurs, raccourcis, Nouveau profil
   Shaders/                    shaders HLSL (copiés à côté de l'exécutable)
-tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage)
+tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage, profils)
 ```

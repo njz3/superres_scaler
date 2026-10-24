@@ -7,19 +7,16 @@ namespace SuperResScaler.App;
 
 /// <summary>
 /// Application logic shared by the main window and the command-line mode: starts/stops the
-/// scaling session, hotkeys, delayed start and automatic start of profiles. UI thread only.
+/// scaling session, hotkeys, delayed start and the profile watcher. UI thread only.
 /// </summary>
 internal sealed class ScalerController : IDisposable
 {
-    private const int AutoScaleDelayMs = 1000;
+    private const int HistorySize = 50;
 
     private readonly SynchronizationContext _ui;
     private readonly HotkeyManager _hotkeys = new();
-    private readonly User32.WinEventProc _foregroundProc;
-    private readonly System.Windows.Forms.Timer _autoScaleTimer = new() { Interval = AutoScaleDelayMs };
+    private readonly List<(DateTime Time, string Text)> _history = new();
     private System.Windows.Forms.Timer? _delayTimer;
-    private IntPtr _foregroundHook;
-    private IntPtr _autoScaleCandidate;
     private int _delayRemaining;
     private ScalingSession? _session;
 
@@ -27,12 +24,14 @@ internal sealed class ScalerController : IDisposable
     {
         _ui = SynchronizationContext.Current ?? throw new InvalidOperationException("ScalerController must be created on the UI thread.");
         Store = store;
-        _foregroundProc = OnForegroundChanged;
-        _autoScaleTimer.Tick += OnAutoScaleTimer;
+        Watcher = new ProfileWatcher(this);
     }
 
     public SettingsStore Store { get; }
     public AppSettings Settings => Store.Settings;
+
+    /// <summary>Starts the profiles marked AutoScale when their window appears.</summary>
+    public ProfileWatcher Watcher { get; }
 
     public bool IsScaling => _session != null;
     public WindowInfo? ScaledWindow { get; private set; }
@@ -40,14 +39,17 @@ internal sealed class ScalerController : IDisposable
     /// <summary>The settings object (profile or defaults) the running session was started from.</summary>
     public ScalingOptions? ActiveOptions { get; private set; }
 
+    /// <summary>The latest messages, oldest first.</summary>
+    public IReadOnlyList<(DateTime Time, string Text)> History => _history;
+
     public event Action? StateChanged;
     public event Action<string>? Message;
 
     /// <summary>A hotkey modified these options (the UI should reload them).</summary>
     public event Action<ScalingOptions>? OptionsChanged;
 
-    /// <summary>The session ended; the argument is the reason (null when stopped on request).</summary>
-    public event Action<string?>? SessionEnded;
+    /// <summary>The session of this window ended; the reason is null when it was stopped on request.</summary>
+    public event Action<WindowInfo?, string?>? SessionEnded;
 
     /// <summary>Registers the configured hotkeys. Returns the problems encountered.</summary>
     public List<string> RegisterHotkeys(Action? toggleAction = null)
@@ -119,6 +121,7 @@ internal sealed class ScalerController : IDisposable
         var session = _session;
         if (session == null)
             return;
+        var window = ScaledWindow;
         _session = null;
         ActiveOptions = null;
         ScaledWindow = null;
@@ -126,7 +129,7 @@ internal sealed class ScalerController : IDisposable
         if (!quiet)
             Report("Mise à l'échelle arrêtée");
         StateChanged?.Invoke();
-        SessionEnded?.Invoke(null);
+        SessionEnded?.Invoke(window, null);
     }
 
     /// <summary>Hotkey: stop the current scaling, or scale the foreground window.</summary>
@@ -184,71 +187,36 @@ internal sealed class ScalerController : IDisposable
         OptionsChanged?.Invoke(ActiveOptions);
     }
 
-    /// <summary>Starts profiles marked AutoScale when their window comes to the foreground.</summary>
-    public void EnableAutoScale()
-    {
-        if (_foregroundHook != IntPtr.Zero)
-            return;
-        _foregroundHook = User32.SetWinEventHook(User32.EVENT_SYSTEM_FOREGROUND, User32.EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _foregroundProc, 0, 0, User32.WINEVENT_OUTOFCONTEXT | User32.WINEVENT_SKIPOWNPROCESS);
-        ConsiderAutoScale(User32.GetForegroundWindow());
-    }
-
-    private void OnForegroundChanged(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
-        => ConsiderAutoScale(hwnd);
-
-    private void ConsiderAutoScale(IntPtr hwnd)
-    {
-        if (!Settings.AutoScaleEnabled || IsScaling || hwnd == IntPtr.Zero)
-            return;
-        IntPtr root = User32.GetAncestor(hwnd, User32.GA_ROOT);
-        var info = WindowInfo.FromHandle(root);
-        if (info == null || Settings.FindProfile(info) is not { AutoScale: true })
-            return;
-        // Wait a little: games often resize or go borderless right after showing their window.
-        _autoScaleCandidate = root;
-        _autoScaleTimer.Stop();
-        _autoScaleTimer.Start();
-    }
-
-    private void OnAutoScaleTimer(object? sender, EventArgs e)
-    {
-        _autoScaleTimer.Stop();
-        IntPtr candidate = _autoScaleCandidate;
-        _autoScaleCandidate = IntPtr.Zero;
-        if (IsScaling || candidate == IntPtr.Zero || GetForegroundRoot() != candidate)
-            return;
-        StartScaling(candidate, activate: false);
-    }
-
     private static IntPtr GetForegroundRoot() => User32.GetAncestor(User32.GetForegroundWindow(), User32.GA_ROOT);
 
     private void OnSessionEnded(ScalingSession session, string? reason) => _ui.Post(_ =>
     {
         if (_session != session)
             return; // already stopped from here
+        var window = ScaledWindow;
         _session = null;
         ActiveOptions = null;
         ScaledWindow = null;
         if (reason != null)
             Report(reason);
         StateChanged?.Invoke();
-        SessionEnded?.Invoke(reason);
+        SessionEnded?.Invoke(window, reason);
     }, null);
 
-    private void Report(string message)
+    public void Report(string message)
     {
         Log.Info(message);
+        _history.Add((DateTime.Now, message));
+        if (_history.Count > HistorySize)
+            _history.RemoveAt(0);
         Message?.Invoke(message);
     }
 
     public void Dispose()
     {
         CancelDelayedScale();
+        Watcher.Dispose();
         StopScaling(quiet: true);
-        if (_foregroundHook != IntPtr.Zero)
-            User32.UnhookWinEvent(_foregroundHook);
-        _autoScaleTimer.Dispose();
         _hotkeys.Dispose();
     }
 }
