@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using System.Diagnostics;
 using SuperResScaler.App;
 using SuperResScaler.Config;

@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Bilinear horizontally, nearest vertically: a smooth horizontal stretch while every
 // scanline stays crisp. Matches what an analog CRT does with a super-resolution mode
 // (horizontally continuous, vertically discrete lines).

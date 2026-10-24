@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using System.Globalization;
 using System.Text.Json.Serialization;
 using SuperResScaler.Native;

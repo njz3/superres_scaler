@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Plain bilinear filtering: smooth, but blurs pixel art when upscaling a lot.
 #include "Common.hlsli"
 

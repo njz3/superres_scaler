@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Area (box) filter: each output pixel is the exact average of the source area it covers.
 //  - Upscaling (320 -> 1920): same as nearest, except output pixels that straddle two source
 //    pixels get the blended colour, so non-integer ratios (256 -> 1920 = 7.5x) stay even.

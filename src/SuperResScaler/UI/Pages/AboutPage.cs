@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using System.Diagnostics;
 using System.Reflection;
 using SuperResScaler.App;
@@ -13,9 +15,11 @@ internal sealed class AboutPage : Page
         string version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
         int plus = version.IndexOf('+');
         string display = plus > 0 && version.Length > plus + 8 ? $"{version[..plus]} ({version.Substring(plus + 1, 7)})" : version;
+        string copyright = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyCopyrightAttribute>()?.Copyright ?? string.Empty;
 
         AddCard(Theme.GlyphFullScreen, $"SuperResScaler {display}",
             "Affiche une fenêtre de jeu en plein écran par un shader, pour les modes super-résolution des écrans CRT (1280x240, 1920x240…).");
+        AddCard(Theme.GlyphInfo, "Copyright", copyright);
         AddCard(Theme.GlyphInfo, "Code source", RepositoryUrl,
             UiFactory.Button("Ouvrir", (_, _) => Process.Start(new ProcessStartInfo(RepositoryUrl) { UseShellExecute = true })));
 

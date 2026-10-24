@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Bicubic Catmull-Rom (4x4 taps): sharper than bilinear for photographic / 3D content.
 // Slight ringing on hard edges.
 #include "Common.hlsli"

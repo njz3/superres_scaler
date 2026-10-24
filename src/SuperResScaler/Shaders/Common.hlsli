@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Declarations shared by every SuperResScaler pixel shader.
 //
 // A shader is one pixel shader with the entry point `main`, compiled as ps_5_0.

@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Lanczos 3 (6x6 taps): the sharpest of the smooth filters, for upscaling 3D or video
 // content. Some ringing on hard edges; not intended for strong downscaling.
 #include "Common.hlsli"

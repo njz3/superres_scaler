@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Nearest neighbour: each output pixel takes the colour of the source pixel it falls in.
 // Sharpest result. On a super-resolution mode (1920x240, 2560x240...) the horizontal error
 // is a tiny fraction of a source pixel, so it is often the best choice there.

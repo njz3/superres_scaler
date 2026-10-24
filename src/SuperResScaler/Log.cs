@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 namespace SuperResScaler;
 
 /// <summary>Minimal thread-safe file logger (SuperResScaler.log next to the settings).</summary>

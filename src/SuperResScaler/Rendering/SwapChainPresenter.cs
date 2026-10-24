@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using SharpGen.Runtime;
 using SuperResScaler.Native;
 using Vortice.Direct3D11;

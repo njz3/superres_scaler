@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using SuperResScaler.Capture;

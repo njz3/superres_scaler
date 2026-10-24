@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
 

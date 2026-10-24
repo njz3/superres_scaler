@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 // Sharp bilinear: nearest-neighbour inside each source pixel, a short bilinear ramp at its
 // edges. Equivalent to an integer nearest prescale followed by bilinear filtering: crisp
 // pixels without the uneven widths of plain nearest at non-integer ratios.

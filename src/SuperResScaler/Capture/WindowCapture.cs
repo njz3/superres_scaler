@@ -1,3 +1,5 @@
+// Copyright (c) Benjamin Maurin (njz3) 2026
+
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Windows.Foundation.Metadata;
