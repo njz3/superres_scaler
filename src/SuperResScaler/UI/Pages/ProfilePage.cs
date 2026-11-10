@@ -16,7 +16,7 @@ namespace SuperResScaler.UI.Pages;
 internal sealed class ProfilePage : Page
 {
     private sealed record ModeItem(ScaleMode Mode, string Label) { public override string ToString() => Label; }
-    private sealed record MonitorItem(int Index, string Label) { public override string ToString() => Label; }
+    private sealed record MonitorItem(string Id, string Label) { public override string ToString() => Label; }
 
     private const string UnchangedResolution = "(inchangée)";
 
@@ -38,12 +38,15 @@ internal sealed class ProfilePage : Page
     private readonly NumericUpDown _barrelCenter = UiFactory.Number(0, 100, 60);
     private readonly NumericUpDown _barrelRadius = UiFactory.Number(1, 1000, 66);
     private readonly SettingCard _cropCard;
+    private readonly ToggleSwitch _mirrorX = new();
+    private readonly ToggleSwitch _mirrorY = new();
     private readonly ComboBox _displayAspect = UiFactory.Editable(110, "auto", "4:3", "16:9", "16:10", "5:4");
-    private readonly ComboBox _monitor = UiFactory.DropDown(260);
+    private readonly ComboBox _monitor = UiFactory.DropDown(420);
     private readonly ComboBox _resolution = UiFactory.Editable(170, UnchangedResolution);
     private readonly ComboBox _placementWindow = UiFactory.DropDown(260);
     private readonly SettingCard _placementCard;
 
+    private readonly ComboBox _sourceDisplay = UiFactory.DropDown(420);
     private readonly ToggleSwitch _clientArea = new();
     private readonly NumericUpDown _cropLeft = UiFactory.Number(0, 4000, 66);
     private readonly NumericUpDown _cropTop = UiFactory.Number(0, 4000, 66);
@@ -89,11 +92,16 @@ internal sealed class ProfilePage : Page
             _cropPosition, UiFactory.Text("Barillet"), _barrel);
         _cropCard.AddDetail(UiFactory.Row(UiFactory.Text("Milieu non déformé"), _barrelCenter, UiFactory.Text("%   Rayon"), _barrelRadius, UiFactory.Text("%")));
         AddCard(Theme.GlyphMonitor, "Forme de l'écran", "auto = 4:3 pour un mode super-résolution (1920x240…), pixels carrés sinon", _displayAspect);
-        AddCard(Theme.GlyphMonitor, "Écran de sortie", null, _monitor);
+        AddCard(Theme.GlyphMonitor, "Écran de sortie", "Auto = celui de la fenêtre ; si tout un écran est capturé, un autre que celui-là",
+            _monitor, UiFactory.Button("Identifier", (_, _) => DisplayIdentifier.Show()));
         AddCard(Theme.GlyphMonitor, "Résolution", "Mode de l'écran pendant la mise à l'échelle (ex. 1920x240@60) ; la résolution d'origine revient à l'arrêt", _resolution);
+        AddCard(Theme.GlyphMirror, "Miroir", "Pour un projecteur : X = derrière un écran (rétroprojection), Y = par le dessus, X et Y = image tournée de 180°",
+            UiFactory.Text("X"), _mirrorX, UiFactory.Text("Y"), _mirrorY);
         _placementCard = AddCard(Theme.GlyphPicture, "Placement", null, _placementWindow);
 
         AddSection("Capture");
+        AddCard(Theme.GlyphMonitor, "Source", "La fenêtre du jeu, ou tout un écran ; la fenêtre ne décide alors que de la fin",
+            _sourceDisplay, UiFactory.Button("Identifier", (_, _) => DisplayIdentifier.Show()));
         AddCard(Theme.GlyphWindow, "Zone client uniquement", "Sans la barre de titre ni les bordures", _clientArea);
         AddCard(Theme.GlyphCrop, "Recadrage manuel", "Pixels retirés de chaque côté",
             UiFactory.Text("G"), _cropLeft, UiFactory.Text("H"), _cropTop, UiFactory.Text("D"), _cropRight, UiFactory.Text("B"), _cropBottom);
@@ -128,20 +136,34 @@ internal sealed class ProfilePage : Page
     private void PopulateLists()
     {
         _mode.Items.AddRange([new ModeItem(ScaleMode.Stretch, "Plein écran étiré"), new ModeItem(ScaleMode.KeepAspect, "Plein écran au ratio (bandes noires)")]);
-        _monitor.Items.Add(new MonitorItem(0, "Auto (écran de la fenêtre)"));
-        foreach (var monitor in MonitorInfo.GetAll())
-            _monitor.Items.Add(new MonitorItem(monitor.Index, monitor.ToString()));
         _shader.Items.AddRange(ShaderLibrary.List().ToArray<object>());
-        _placementWindow.DropDownWidth = Theme.S(520);
+        _placementWindow.DropDownWidth = _monitor.DropDownWidth = _sourceDisplay.DropDownWidth = Theme.S(520);
+    }
+
+    /// <summary>Lists the displays and selects <paramref name="value"/>, which is kept even if that display is absent today.</summary>
+    private static void FillDisplayList(ComboBox combo, string emptyLabel, IReadOnlyList<MonitorInfo> monitors, string value)
+    {
+        combo.Items.Clear();
+        combo.Items.Add(new MonitorItem(string.Empty, emptyLabel));
+        foreach (var monitor in monitors)
+            combo.Items.Add(new MonitorItem(monitor.Id, monitor.ToString()));
+        string id = MonitorInfo.Find(monitors, value)?.Id ?? value;
+        MonitorItem? selected = combo.Items.Cast<MonitorItem>().FirstOrDefault(m => m.Id == id);
+        if (selected == null)
+        {
+            selected = new MonitorItem(value, $"Écran absent : {value}");
+            combo.Items.Add(selected);
+        }
+        combo.SelectedItem = selected;
     }
 
     private void Wire()
     {
         foreach (var text in new Control[] { _name, _process, _title, _aspect, _displayAspect, _resolution })
             text.TextChanged += (_, _) => Changed();
-        foreach (var combo in new[] { _shader, _mode, _monitor })
+        foreach (var combo in new[] { _shader, _mode, _monitor, _sourceDisplay })
             combo.SelectedIndexChanged += (_, _) => Changed();
-        foreach (var toggle in new[] { _autoScale, _barrel, _clientArea, _autoCrop, _cursor, _vsync, _preview })
+        foreach (var toggle in new[] { _autoScale, _barrel, _mirrorX, _mirrorY, _clientArea, _autoCrop, _cursor, _vsync, _preview })
             toggle.CheckedChanged += (_, _) => Changed();
         foreach (var number in new[] { _autoDelay, _cropPosition, _barrelCenter, _barrelRadius, _cropLeft, _cropTop, _cropRight, _cropBottom, _previewWidth, _previewHeight })
             number.ValueChanged += (_, _) => Changed();
@@ -171,8 +193,12 @@ internal sealed class ProfilePage : Page
         _barrel.Checked = o.CropBarrel;
         _barrelCenter.Value = Math.Clamp(o.BarrelCenter, 0, 100);
         _barrelRadius.Value = Math.Clamp(o.BarrelRadius, 1, 1000);
+        _mirrorX.Checked = o.MirrorX;
+        _mirrorY.Checked = o.MirrorY;
         _displayAspect.Text = o.DisplayAspect;
-        _monitor.SelectedItem = _monitor.Items.Cast<MonitorItem>().FirstOrDefault(m => m.Index == o.Monitor) ?? _monitor.Items[0];
+        var monitors = MonitorInfo.GetAll();
+        FillDisplayList(_monitor, "Auto", monitors, o.Monitor);
+        FillDisplayList(_sourceDisplay, "La fenêtre du jeu", monitors, o.SourceDisplay);
         _resolution.Text = ResolutionRequest.IsUnchanged(o.Resolution) ? UnchangedResolution : o.Resolution;
         _clientArea.Checked = o.ClientAreaOnly;
         _cropLeft.Value = Math.Clamp(o.CropLeft, 0, 4000);
@@ -216,7 +242,8 @@ internal sealed class ProfilePage : Page
 
         o.Shader = _shader.SelectedItem as string ?? o.Shader;
         o.Mode = (_mode.SelectedItem as ModeItem)?.Mode ?? o.Mode;
-        o.Monitor = (_monitor.SelectedItem as MonitorItem)?.Index ?? 0;
+        o.Monitor = (_monitor.SelectedItem as MonitorItem)?.Id ?? string.Empty;
+        o.SourceDisplay = (_sourceDisplay.SelectedItem as MonitorItem)?.Id ?? string.Empty;
         o.AspectRatio = ValidatedText(_aspect, t => PictureAspect.TryParse(t, out _), "original") ?? o.AspectRatio;
         o.DisplayAspect = ValidatedText(_displayAspect, t => t.Length == 0 || t.Equals("auto", StringComparison.OrdinalIgnoreCase) || Ratio.TryParse(t, out _), "auto") ?? o.DisplayAspect;
         string? resolution = ValidatedText(_resolution, t => ResolutionRequest.IsUnchanged(t) || ResolutionRequest.TryParse(t, out _), string.Empty);
@@ -226,6 +253,8 @@ internal sealed class ProfilePage : Page
         o.CropBarrel = _barrel.Checked;
         o.BarrelCenter = (int)_barrelCenter.Value;
         o.BarrelRadius = (int)_barrelRadius.Value;
+        o.MirrorX = _mirrorX.Checked;
+        o.MirrorY = _mirrorY.Checked;
         o.ClientAreaOnly = _clientArea.Checked;
         o.CropLeft = (int)_cropLeft.Value;
         o.CropTop = (int)_cropTop.Value;
@@ -259,6 +288,7 @@ internal sealed class ProfilePage : Page
         _barrelCenter.Enabled = _barrelRadius.Enabled = crop && _options.CropBarrel;
         _previewWidth.Enabled = _previewHeight.Enabled = _options.Preview;
         _autoDelay.Enabled = _profile?.AutoScale ?? false;
+        _clientArea.Enabled = _placementWindow.Enabled = _options.SourceDisplay.Length == 0;
     }
 
     // ------------------------------------------------------------------ windows
@@ -281,6 +311,11 @@ internal sealed class ProfilePage : Page
     private void ScaleMatchingWindow()
     {
         var window = MatchingWindows().FirstOrDefault();
+        if (window == null && _options.SourceDisplay.Length > 0)
+        {
+            Controller.StartDisplay(_options.SourceDisplay, _options);
+            return;
+        }
         if (window == null)
         {
             RefreshMatches();
@@ -314,11 +349,9 @@ internal sealed class ProfilePage : Page
     private MonitorInfo TargetMonitor()
     {
         var monitors = MonitorInfo.GetAll();
-        if (_options.Monitor > 0 && _options.Monitor <= monitors.Count)
-            return monitors[_options.Monitor - 1];
-        if (_placementWindow.SelectedItem is WindowInfo window)
-            return MonitorInfo.FromWindow(window.Handle);
-        return monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0];
+        return MonitorInfo.Find(monitors, _options.Monitor)
+            ?? MonitorInfo.AutoOutput(monitors, MonitorInfo.Find(monitors, _options.SourceDisplay),
+                _placementWindow.SelectedItem is WindowInfo window ? MonitorInfo.FromWindow(window.Handle) : null);
     }
 
     /// <summary>The 32-bit modes of the output monitor, like SetResolution LIST.</summary>
@@ -352,16 +385,24 @@ internal sealed class ProfilePage : Page
         UpdatePlacement();
     }
 
-    /// <summary>Where the chosen window's picture lands with these settings.</summary>
+    /// <summary>Where the picture of the captured display or of the chosen window lands with these settings.</summary>
     private void UpdatePlacement()
     {
-        if (_placementWindow.SelectedItem is not WindowInfo window || !Dwmapi.TryGetFrameBounds(window.Handle, out RECT frame))
+        var o = _options;
+        Rectangle source;
+        if (MonitorInfo.Find(MonitorInfo.GetAll(), o.SourceDisplay) is { } display)
+        {
+            source = Geometry.ComputeDisplayRegion(o, display.Bounds.Width, display.Bounds.Height);
+        }
+        else if (_placementWindow.SelectedItem is WindowInfo window && Dwmapi.TryGetFrameBounds(window.Handle, out RECT frame))
+        {
+            source = Geometry.ComputeSourceRegion(window.Handle, o, frame.Width, frame.Height);
+        }
+        else
         {
             _placementCard.Description = "Choisissez une fenêtre pour voir où son image sera affichée";
             return;
         }
-        var o = _options;
-        Rectangle source = Geometry.ComputeSourceRegion(window.Handle, o, frame.Width, frame.Height);
         Size output;
         if (o.Preview)
             output = new Size(o.PreviewWidth, o.PreviewHeight);
@@ -384,8 +425,15 @@ internal sealed class ProfilePage : Page
             : "plein écran";
         string cut = placement.Barrel != null ? ", bords courbés"
             : placement.Source.Size != source.Size ? $", source rognée à {placement.Source.Width}x{placement.Source.Height}" : "";
+        string mirror = (o.MirrorX, o.MirrorY) switch
+        {
+            (true, true) => ", miroir X et Y",
+            (true, false) => ", miroir X",
+            (false, true) => ", miroir Y",
+            _ => "",
+        };
         _placementCard.Description = $"Source {source.Width}x{source.Height} → écran {output.Width}x{output.Height} (forme {shape:0.###}) : "
-                                   + $"image {dest.Width:0}x{dest.Height:0} en ({dest.X:0},{dest.Y:0}), {bars}{cut}"
+                                   + $"image {dest.Width:0}x{dest.Height:0} en ({dest.X:0},{dest.Y:0}), {bars}{cut}{mirror}"
                                    + (o.AutoCrop ? " — avant recadrage auto" : "");
     }
 }

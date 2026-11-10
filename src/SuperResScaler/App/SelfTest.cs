@@ -43,6 +43,7 @@ internal static class SelfTest
             {
                 DisplayModeTests(Check);
                 RenderTests(hwnd, outputDirectory, Check);
+                DisplayCaptureTests(hwnd, outputDirectory, Check);
                 SessionTest(hwnd, outputDirectory, preview: true, Check);
                 if (includeOverlay)
                     SessionTest(hwnd, outputDirectory, preview: false, Check);
@@ -106,7 +107,7 @@ internal static class SelfTest
     private static void RenderTests(IntPtr hwnd, string outputDirectory, Action<bool, string> check)
     {
         using var renderer = new Renderer();
-        using var capture = new WindowCapture(renderer.Device, hwnd, captureCursor: false);
+        using var capture = FrameCapture.ForWindow(renderer.Device, hwnd, captureCursor: false);
         using var frame = WaitForFrame(capture);
         check(frame != null, "Windows.Graphics.Capture delivers a frame of the test window");
         if (frame == null)
@@ -197,6 +198,128 @@ internal static class SelfTest
                 $"aspect {format.AspectRatio}, {format.Mode}: picture at {dest} (expected {expected}), "
                 + $"pixels {(drawn && wrong.Count == 0 ? "OK" : string.Join("; ", wrong.DefaultIfEmpty("pattern wrong")))}, black bars {(bars ? "OK" : "missing")}");
         }
+
+        // Mirror: the output must be the exact mirror image of the normal one, off-centre crop and barrel included.
+        var mirrorCases = new (string Name, ScalingOptions Options)[]
+        {
+            ("stretch", new ScalingOptions()),
+            ("16x9", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "16:9" }),
+            ("crop-off-centre", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "1:1_crop", CropPosition = -50 }),
+            ("barrel-off-centre", new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "1:1_crop", CropPosition = -50, CropBarrel = true }),
+        };
+        var flips = new (string Name, bool X, bool Y, RotateFlipType Flip)[]
+        {
+            ("x", true, false, RotateFlipType.RotateNoneFlipX),
+            ("y", false, true, RotateFlipType.RotateNoneFlipY),
+            ("xy", true, true, RotateFlipType.RotateNoneFlipXY),
+        };
+        foreach (var (name, format) in mirrorCases)
+        {
+            using var normal = renderer.RenderToBitmap(1920, 240, Geometry.ComputePlacement(format, content.Width, content.Height, 1920, 240));
+            foreach (var flip in flips)
+            {
+                var mirrored = format.Snapshot();
+                mirrored.MirrorX = flip.X;
+                mirrored.MirrorY = flip.Y;
+                using var output = renderer.RenderToBitmap(1920, 240, Geometry.ComputePlacement(mirrored, content.Width, content.Height, 1920, 240));
+                output.Save(Path.Combine(outputDirectory, $"Area_1920x240_{name}_mirror-{flip.Name}.png"));
+                using var expected = (Bitmap)normal.Clone();
+                expected.RotateFlip(flip.Flip);
+                int different = CountDifferentPixels(output, expected);
+                check(different == 0, $"mirror {flip.Name}, {name}: mirror image of the normal output ({different} different pixels)");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whole-display capture: finds the test pattern in the capture of its display, then runs a
+    /// real session whose output lies on that same display. Only the pattern's rectangle is ever
+    /// saved: the rest of the capture is the user's screen.
+    /// </summary>
+    private static void DisplayCaptureTests(IntPtr hwnd, string outputDirectory, Action<bool, string> check)
+    {
+        var monitors = MonitorInfo.GetAll();
+        check(monitors.Count > 0 && monitors.All(m => m.Number > 0 && m.Id.Length > 0) && monitors.Select(m => m.Id).Distinct().Count() == monitors.Count,
+            $"{monitors.Count} display(s) with distinct ids, numbers {string.Join(", ", monitors.Select(m => m.Number))}");
+
+        MonitorInfo monitor = MonitorInfo.FromWindow(hwnd);
+        RECT bounds = monitor.Bounds;
+        var origin = new POINT();
+        User32.ClientToScreen(hwnd, ref origin);
+        var pattern = new Rectangle(origin.X - bounds.Left + TestPatternForm.ContentX, origin.Y - bounds.Top, TestPatternForm.ContentWidth, TestPatternForm.ClientHeight);
+
+        using var renderer = new Renderer();
+        renderer.LoadShader(ShaderLibrary.DefaultShader);
+        using (var capture = FrameCapture.ForMonitor(renderer.Device, monitor.Handle, captureCursor: false))
+        using (var frame = WaitForFrame(capture))
+        {
+            check(frame != null && frame.ContentWidth == bounds.Width && frame.ContentHeight == bounds.Height,
+                $"display capture delivers the whole display, {bounds.Width}x{bounds.Height} (got {frame?.ContentWidth}x{frame?.ContentHeight})");
+            if (frame == null)
+                return;
+            renderer.UpdateSource(frame.Texture, pattern.X, pattern.Y, pattern.Width, pattern.Height);
+            using var output = renderer.RenderToBitmap(1280, 240, Fill(pattern, 1280, 240));
+            output.Save(Path.Combine(outputDirectory, "display_capture_pattern_1280x240.png"));
+            check(VerifyPattern(output, new Rectangle(0, 0, 1280, 240), out string detail), $"display capture: pattern found at {pattern.Location} {detail}");
+        }
+
+        string? endReason = "not ended";
+        var ended = new ManualResetEventSlim();
+        var options = new ScalingOptions { SourceDisplay = monitor.Id, Monitor = monitor.Id, Preview = true, PreviewWidth = 1280, PreviewHeight = 240 };
+        var session = ScalingSession.Start(IntPtr.Zero, options, (_, reason) => { endReason = reason; ended.Set(); });
+        Thread.Sleep(1500);
+
+        // The output covers part of the pattern on screen: seen in the capture, it would feed back on itself.
+        using (var capture = FrameCapture.ForMonitor(renderer.Device, monitor.Handle, captureCursor: false))
+        using (var frame = WaitForFrame(capture))
+        {
+            string detail = "no frame";
+            bool clean = false;
+            if (frame != null)
+            {
+                using var seen = Renderer.ToBitmap(renderer.ReadPixels(frame.Texture, pattern.X, pattern.Y, pattern.Width, pattern.Height), pattern.Width, pattern.Height);
+                clean = VerifyPattern(seen, new Rectangle(Point.Empty, pattern.Size), out detail);
+            }
+            check(clean, $"display session: its output on the captured display stays out of the capture {detail}");
+        }
+
+        // A few single pixels of the output, where the bars land once the whole display is shrunk to
+        // 1280x240. Reading the screen does not see a window excluded from capture, so the exclusion
+        // ends here: the output and its drop shadow enter the capture, hence bars sampled well below them.
+        check(User32.SetWindowDisplayAffinity(session.OutputWindow, User32.WDA_NONE), "display session: output window made readable for this test");
+        Thread.Sleep(300);
+        Rectangle screen = session.OutputBounds;
+        var wrong = new List<string>();
+        for (int i = 0; i < TestPatternForm.Bars.Length; i++)
+        {
+            int x = screen.X + (pattern.X + i * TestPatternForm.BarWidth + TestPatternForm.BarWidth / 2) * screen.Width / bounds.Width;
+            int y = screen.Y + (pattern.Y + TestPatternForm.LinesTop - 15) * screen.Height / bounds.Height;
+            using var pixel = new Bitmap(1, 1);
+            using (var g = Graphics.FromImage(pixel))
+                g.CopyFromScreen(x, y, 0, 0, new Size(1, 1));
+            if (!Near(pixel.GetPixel(0, 0), TestPatternForm.Bars[i]))
+                wrong.Add($"bar {i} at ({x},{y}) = {Describe(pixel.GetPixel(0, 0))}");
+        }
+        check(wrong.Count == 0, $"display session: the display is shown scaled at {screen} {(wrong.Count == 0 ? "OK" : string.Join("; ", wrong))}");
+
+        var stopwatch = Stopwatch.StartNew();
+        session.Stop();
+        ended.Wait(3000);
+        check(ended.IsSet && endReason == null, $"display session stops cleanly in {stopwatch.ElapsedMilliseconds} ms (reason: {endReason ?? "none"})");
+    }
+
+    private static int CountDifferentPixels(Bitmap a, Bitmap b)
+    {
+        int different = 0;
+        for (int y = 0; y < a.Height; y++)
+        {
+            for (int x = 0; x < a.Width; x++)
+            {
+                if (!Near(a.GetPixel(x, y), b.GetPixel(x, y)))
+                    different++;
+            }
+        }
+        return different;
     }
 
     private static Placement Fill(Rectangle content, int width, int height)
@@ -244,7 +367,7 @@ internal static class SelfTest
         check(ended.IsSet && endReason == null, $"{name} session stops cleanly in {stopwatch.ElapsedMilliseconds} ms (reason: {endReason ?? "none"})");
     }
 
-    private static CapturedFrame? WaitForFrame(WindowCapture capture)
+    private static CapturedFrame? WaitForFrame(FrameCapture capture)
     {
         var timeout = Stopwatch.StartNew();
         while (timeout.Elapsed < TimeSpan.FromSeconds(5))
@@ -319,6 +442,7 @@ internal static class SelfTest
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             ShowInTaskbar = false;
+            TopMost = true; // a display capture sees what is really on screen
             StartPosition = FormStartPosition.Manual;
             Location = new Point(200, 200);
             ClientSize = new Size(ClientWidth, ClientHeight);

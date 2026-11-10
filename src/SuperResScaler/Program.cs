@@ -57,18 +57,18 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>The display modes of one monitor (1..N) or of all of them, current mode marked.</summary>
-    private static string DescribeModes(int monitorIndex)
+    /// <summary>The display modes of one display (by its number) or of all of them, current mode marked.</summary>
+    private static string DescribeModes(int monitorNumber)
     {
         var text = new System.Text.StringBuilder();
-        foreach (var monitor in MonitorInfo.GetAll().Where(m => monitorIndex <= 0 || m.Index == monitorIndex))
+        foreach (var monitor in MonitorInfo.GetAll().Where(m => monitorNumber <= 0 || m.Number == monitorNumber))
         {
             DisplayMode? current = DisplayModes.Current(monitor.DeviceName);
-            text.AppendLine($"Écran {monitor} — actuel : {current?.ToString() ?? "?"}");
+            text.AppendLine($"{monitor} — actuel : {current?.ToString() ?? "?"}");
             foreach (var mode in DisplayModes.List(monitor.DeviceName).Where(m => m.BitsPerPixel == 32))
                 text.AppendLine($"  {(mode == current ? "*" : " ")} {mode}");
         }
-        return text.Length > 0 ? text.ToString() : $"Écran {monitorIndex} introuvable";
+        return text.Length > 0 ? text.ToString() : $"Écran {monitorNumber} introuvable";
     }
 
     /// <summary>Prints to the parent console when started from one, otherwise shows a message box.</summary>

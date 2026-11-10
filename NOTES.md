@@ -15,6 +15,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 4 | 26/10 | N'archiver que l'exécutable ; le PC devra avoir .NET 10 Desktop installé | ✅ exe dépendant de .NET + dossier `Shaders/` (indispensable), 7,6 Mo |
 | 5 | 26/10 | Pas de PDB dans l'archive | ✅ |
 | 6 | 26/10 | Mettre ces notes dans le fichier de suivi | ✅ ce fichier |
+| 7 | 10/11 | Pull ; options de miroir X/Y de la sortie (projection) | ⚠️ fait : rendu vérifié hors écran (12 combinaisons), pas essayé sur un projecteur |
+| 8 | 10/11 | Capturer un écran complet et l'afficher sur un autre, avec la numérotation de Windows | ⚠️ fait : capture, session et exclusion vérifiées par l'auto-test sur un seul écran ; pas essayé avec deux écrans ni sur une borne, numéro égal à celui de Windows non vérifiable automatiquement |
 
 ## Releases
 

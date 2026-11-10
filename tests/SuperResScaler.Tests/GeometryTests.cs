@@ -105,6 +105,51 @@ public class GeometryTests
         Assert.Null(placement.Barrel);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void MirrorFlagsReachThePlacement(bool mirrorX, bool mirrorY)
+    {
+        var options = new ScalingOptions { MirrorX = mirrorX, MirrorY = mirrorY };
+        var placement = Geometry.ComputePlacement(options, 320, 240, 1920, 240);
+        Assert.Equal((mirrorX, mirrorY), (placement.MirrorX, placement.MirrorY));
+        Assert.Equal(new RectangleF(0, 0, 1920, 240), placement.Dest); // a full-screen picture does not move
+    }
+
+    [Theory]
+    // Odd spaces left by the bars: rounding makes them uneven, and the mirror swaps them.
+    [InlineData(1921, 1080, 640, 480, false, false, 240, 0, 1440, 1080)]
+    [InlineData(1921, 1080, 640, 480, true, false, 241, 0, 1440, 1080)]
+    [InlineData(1920, 1081, 1920, 1080, false, false, 0, 0, 1920, 1080)]
+    [InlineData(1920, 1081, 1920, 1080, false, true, 0, 1, 1920, 1080)]
+    public void MirrorSwapsTheBars(int outputWidth, int outputHeight, int sourceWidth, int sourceHeight, bool mirrorX, bool mirrorY, int x, int y, int width, int height)
+    {
+        var options = new ScalingOptions { Mode = ScaleMode.KeepAspect, MirrorX = mirrorX, MirrorY = mirrorY };
+        var dest = Geometry.ComputeDestination(options, sourceWidth, sourceHeight, outputWidth, outputHeight);
+        Assert.Equal(new RectangleF(x, y, width, height), dest);
+    }
+
+    [Fact]
+    public void MirrorKeepsTheCroppedPart()
+    {
+        var options = new ScalingOptions { Mode = ScaleMode.KeepAspect, AspectRatio = "4:3_crop", CropPosition = -100, MirrorX = true };
+        var placement = Geometry.ComputePlacement(options, 1280, 720, 1920, 240);
+        Assert.Equal(new Rectangle(0, 0, 960, 720), placement.Source);
+    }
+
+    [Fact]
+    public void MirrorIsCopiedAndParsedFromTheCommandLine()
+    {
+        var copy = new ScalingOptions { MirrorX = true, MirrorY = true }.Snapshot();
+        Assert.True(copy.MirrorX && copy.MirrorY);
+
+        var parsed = new ScalingOptions();
+        App.CommandLineOptions.Parse(["--process", "game.exe", "--mirror-x", "--mirror-y"]).ApplyOverrides(parsed);
+        Assert.True(parsed.MirrorX && parsed.MirrorY);
+    }
+
     [Fact]
     public void BarrelKeepsTheWholePicture()
     {

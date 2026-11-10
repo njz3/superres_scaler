@@ -1,6 +1,7 @@
 // Copyright (c) Benjamin Maurin (njz3) 2026
 
 using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using SuperResScaler.Native;
 using SuperResScaler.Rendering;
@@ -51,6 +52,12 @@ public class ScalingOptions
     /// <summary>The barrel's radius in % of the frame: small bends hard at the edge, large compresses evenly.</summary>
     public int BarrelRadius { get; set; } = 50;
 
+    /// <summary>Mirror the output left/right, e.g. for a projector behind a translucent screen.</summary>
+    public bool MirrorX { get; set; }
+
+    /// <summary>Mirror the output top/bottom, e.g. for a projector above the screen. With MirrorX: turned by 180°.</summary>
+    public bool MirrorY { get; set; }
+
     /// <summary>Capture only the client area (no title bar or borders).</summary>
     public bool ClientAreaOnly { get; set; } = true;
 
@@ -66,8 +73,15 @@ public class ScalingOptions
 
     public bool VSync { get; set; } = true;
 
-    /// <summary>Output monitor: 0 = the monitor of the source window, otherwise 1..N.</summary>
-    public int Monitor { get; set; }
+    /// <summary>
+    /// Display captured instead of the window: its stable id or its number, empty = the window.
+    /// With a game profile, the session still ends when the game's window closes.
+    /// </summary>
+    public string SourceDisplay { get; set; } = string.Empty;
+
+    /// <summary>Output display: its stable id or its number, empty = automatic.</summary>
+    [JsonConverter(typeof(DisplayReferenceConverter))]
+    public string Monitor { get; set; } = string.Empty;
 
     /// <summary>
     /// Display mode set on the output monitor while scaling, e.g. "1920x240@60" or "1280x480i";
@@ -98,6 +112,8 @@ public class ScalingOptions
         CropBarrel = other.CropBarrel;
         BarrelCenter = other.BarrelCenter;
         BarrelRadius = other.BarrelRadius;
+        MirrorX = other.MirrorX;
+        MirrorY = other.MirrorY;
         ClientAreaOnly = other.ClientAreaOnly;
         CropLeft = other.CropLeft;
         CropTop = other.CropTop;
@@ -106,6 +122,7 @@ public class ScalingOptions
         AutoCrop = other.AutoCrop;
         CaptureCursor = other.CaptureCursor;
         VSync = other.VSync;
+        SourceDisplay = other.SourceDisplay;
         Monitor = other.Monitor;
         Resolution = other.Resolution;
         Preview = other.Preview;
@@ -204,6 +221,19 @@ public static class WindowMatcher
         return System.Text.RegularExpressions.Regex.IsMatch(text, regex,
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
+}
+
+/// <summary>A display reference in settings.json; also reads the former numeric "Monitor" values (0 = automatic).</summary>
+public sealed class DisplayReferenceConverter : JsonConverter<string>
+{
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number)
+            return reader.GetInt32() is var number && number > 0 ? number.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        return reader.GetString() ?? string.Empty;
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => writer.WriteStringValue(value);
 }
 
 /// <summary>How the picture goes in its frame (linuxloader's ASPECT_RATIO families).</summary>

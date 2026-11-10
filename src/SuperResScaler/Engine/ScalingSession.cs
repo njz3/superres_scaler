@@ -10,7 +10,8 @@ using SuperResScaler.Rendering;
 namespace SuperResScaler.Engine;
 
 /// <summary>
-/// One scaling run: captures a window and presents it scaled on a monitor. Everything
+/// One scaling run: captures a window or a whole display and presents it scaled on a display.
+/// With a whole display, the window (if any) only decides when the run ends. Everything
 /// (overlay window, D3D11 device, capture session) lives on a dedicated render thread.
 /// </summary>
 internal sealed class ScalingSession
@@ -22,7 +23,8 @@ internal sealed class ScalingSession
     private const int TopMostInterval = 120;
     private const int DisplayCheckInterval = 60;
 
-    private readonly IntPtr _source;
+    private readonly IntPtr _window;
+    private readonly bool _capturesDisplay;
     private readonly Thread _thread;
     private readonly ConcurrentQueue<Action> _commands = new();
     private readonly ManualResetEventSlim _started = new();
@@ -37,16 +39,17 @@ internal sealed class ScalingSession
     private Renderer? _renderer;
     private OverlayWindow? _overlay;
     private SwapChainPresenter? _presenter;
-    private WindowCapture? _capture;
+    private FrameCapture? _capture;
     private DisplayModeChange? _displayChange;
     private string? _monitorDevice;
     private Rectangle _outputBounds;
     private Rectangle _lastRegion;
     private long _capturedFrames;
 
-    private ScalingSession(IntPtr source, ScalingOptions options, Action<ScalingSession, string?> onEnded, Action<string>? onMessage)
+    private ScalingSession(IntPtr window, ScalingOptions options, Action<ScalingSession, string?> onEnded, Action<string>? onMessage)
     {
-        _source = source;
+        _window = window;
+        _capturesDisplay = !string.IsNullOrWhiteSpace(options.SourceDisplay);
         _options = options.Snapshot();
         _onEnded = onEnded;
         _onMessage = onMessage;
@@ -54,22 +57,24 @@ internal sealed class ScalingSession
         _thread.SetApartmentState(ApartmentState.MTA);
     }
 
-    public IntPtr SourceWindow => _source;
-
     /// <summary>Screen rectangle the image is presented in (client area of the preview window).</summary>
     public Rectangle OutputBounds => _outputBounds;
+
+    /// <summary>The window the image is presented in.</summary>
+    public IntPtr OutputWindow => _overlay?.Handle ?? IntPtr.Zero;
 
     /// <summary>Shader actually in use (may be the built-in fallback).</summary>
     public string? ActiveShader { get; private set; }
 
     /// <summary>
-    /// Starts scaling <paramref name="source"/>. Throws if the capture or the output cannot be set up.
+    /// Starts scaling <paramref name="window"/>, or the display of options.SourceDisplay (the window may
+    /// then be zero). Throws if the capture or the output cannot be set up.
     /// <paramref name="onEnded"/> is called on the render thread with the reason (null when stopped on request).
     /// </summary>
-    public static ScalingSession Start(IntPtr source, ScalingOptions options,
+    public static ScalingSession Start(IntPtr window, ScalingOptions options,
         Action<ScalingSession, string?> onEnded, Action<string>? onMessage = null)
     {
-        var session = new ScalingSession(source, options, onEnded, onMessage);
+        var session = new ScalingSession(window, options, onEnded, onMessage);
         session._thread.Start();
         session._started.Wait();
         if (session._startError != null)
@@ -136,8 +141,11 @@ internal sealed class ScalingSession
 
     private void Initialize()
     {
-        var info = WindowInfo.FromHandle(_source) ?? throw new InvalidOperationException("La fenêtre source n'existe plus.");
-        Log.Info($"Scaling '{info.Title}' ({info.ProcessName}), shader {_options.Shader}, mode {_options.Mode}, preview {_options.Preview}");
+        var info = WindowInfo.FromHandle(_window);
+        if (info == null && (!_capturesDisplay || _window != IntPtr.Zero))
+            throw new InvalidOperationException("La fenêtre source n'existe plus.");
+        string what = _capturesDisplay ? $"display {FindSourceDisplay()}" : $"'{info!.Title}' ({info.ProcessName})";
+        Log.Info($"Scaling {what}, shader {_options.Shader}, mode {_options.Mode}, preview {_options.Preview}");
 
         _renderer = new Renderer();
         _renderer.LoadShaderOrFallback(_options.Shader);
@@ -152,9 +160,25 @@ internal sealed class ScalingSession
         _outputBounds = ResolveOutputBounds();
         _overlay = new OverlayWindow(_outputBounds, _options.Preview);
         _presenter = new SwapChainPresenter(_renderer, _overlay.Handle, _outputBounds.Width, _outputBounds.Height);
-        _capture = new WindowCapture(_renderer.Device, _source, _options.CaptureCursor);
+        _capture = CreateCapture();
         Log.Info($"Output {_outputBounds}");
     }
+
+    private FrameCapture CreateCapture()
+    {
+        if (!_capturesDisplay)
+            return FrameCapture.ForWindow(_renderer!.Device, _window, _options.CaptureCursor);
+
+        // Looked up again: a display's handle does not survive the mode change made above.
+        var display = FindSourceDisplay();
+        if (display.DeviceName == _monitorDevice && !_overlay!.ExcludeFromCapture())
+            _onMessage?.Invoke("L'image capturée contiendra sa propre sortie : choisissez un autre écran de sortie");
+        return FrameCapture.ForMonitor(_renderer!.Device, display.Handle, _options.CaptureCursor);
+    }
+
+    private MonitorInfo FindSourceDisplay()
+        => MonitorInfo.Find(MonitorInfo.GetAll(), _options.SourceDisplay)
+           ?? throw new InvalidOperationException($"Écran à capturer introuvable : {_options.SourceDisplay}");
 
     private string? Loop()
     {
@@ -173,10 +197,12 @@ internal sealed class ScalingSession
             while (_commands.TryDequeue(out var command))
                 command();
 
-            if (!User32.IsWindow(_source) || capture.IsClosed)
+            if (_window != IntPtr.Zero && !User32.IsWindow(_window))
                 return "La fenêtre source a été fermée";
+            if (capture.IsClosed)
+                return _capturesDisplay ? "L'écran capturé n'est plus disponible" : "La fenêtre source a été fermée";
 
-            if (User32.IsIconic(_source))
+            if (!_capturesDisplay && User32.IsIconic(_window))
             {
                 // Minimized windows produce no frames: show the desktop until it is restored.
                 if (overlay.IsVisible)
@@ -213,7 +239,9 @@ internal sealed class ScalingSession
     private bool UpdateSource(CapturedFrame frame)
     {
         var renderer = _renderer!;
-        Rectangle region = Geometry.ComputeSourceRegion(_source, _options, frame.ContentWidth, frame.ContentHeight);
+        Rectangle region = _capturesDisplay
+            ? Geometry.ComputeDisplayRegion(_options, frame.ContentWidth, frame.ContentHeight)
+            : Geometry.ComputeSourceRegion(_window, _options, frame.ContentWidth, frame.ContentHeight);
         if (region.Width <= 0 || region.Height <= 0)
             return false;
 
@@ -257,6 +285,8 @@ internal sealed class ScalingSession
             _capture!.SetCursorCapture(options.CaptureCursor);
         if (!string.Equals(previous.Resolution, options.Resolution, StringComparison.OrdinalIgnoreCase))
             _onMessage?.Invoke("Nouvelle résolution : appliquée au prochain démarrage de la mise à l'échelle");
+        if (!string.Equals(previous.SourceDisplay, options.SourceDisplay, StringComparison.OrdinalIgnoreCase))
+            _onMessage?.Invoke("Nouvelle source : appliquée au prochain démarrage de la mise à l'échelle");
         if (previous.AutoCrop != options.AutoCrop || previous.ClientAreaOnly != options.ClientAreaOnly
             || previous.CropLeft != options.CropLeft || previous.CropTop != options.CropTop
             || previous.CropRight != options.CropRight || previous.CropBottom != options.CropBottom)
@@ -302,14 +332,13 @@ internal sealed class ScalingSession
 
     private MonitorInfo PickMonitor()
     {
-        if (_options.Monitor > 0)
-        {
-            var all = MonitorInfo.GetAll();
-            if (_options.Monitor <= all.Count)
-                return all[_options.Monitor - 1];
-            Log.Warn($"Monitor {_options.Monitor} not found, using the source window's monitor");
-        }
-        return MonitorInfo.FromWindow(_source);
+        var all = MonitorInfo.GetAll();
+        if (MonitorInfo.Find(all, _options.Monitor) is { } chosen)
+            return chosen;
+        if (!string.IsNullOrWhiteSpace(_options.Monitor))
+            Log.Warn($"Output display {_options.Monitor} not found, choosing one automatically");
+        return MonitorInfo.AutoOutput(all, MonitorInfo.Find(all, _options.SourceDisplay),
+            _window != IntPtr.Zero ? MonitorInfo.FromWindow(_window) : null);
     }
 
     /// <summary>Follows display mode changes (e.g. switching between 1920x240 and 2560x240).</summary>

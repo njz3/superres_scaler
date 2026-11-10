@@ -56,11 +56,11 @@ Lancé sans paramètre, `SuperResScaler.exe` ouvre une fenêtre organisée comme
 
 | Page | Contenu |
 | --- | --- |
-| **Accueil** | état de la mise à l'échelle (bouton *Arrêter*), surveillance des profils (interrupteur), raccourci, mise à l'échelle différée (*Démarrer*, puis cliquer sur le jeu), mise à l'échelle d'une fenêtre précise, journal récent |
+| **Accueil** | état de la mise à l'échelle (bouton *Arrêter*), surveillance des profils (interrupteur), raccourci, mise à l'échelle différée (*Démarrer*, puis cliquer sur le jeu), mise à l'échelle d'une fenêtre précise ou d'un écran complet, journal récent |
 | **Profils → Par défaut** | réglages utilisés pour toute fenêtre sans profil |
 | **Profils → *un jeu*** | les fenêtres auxquelles le profil s'applique, puis tous les réglages de rendu et de capture du jeu |
 | **Profils → Nouveau profil** | choisir la fenêtre du jeu en cours (ou saisir son processus), un nom, et les réglages à copier |
-| **Paramètres** | zone de notification, surveillance des profils, raccourcis (modifiables), dossiers |
+| **Paramètres** | zone de notification, surveillance des profils, raccourcis (modifiables), numéros des écrans, dossiers |
 | **À propos** | version, code source |
 
 Les changements sont enregistrés immédiatement dans `settings.json` et appliqués en direct si le
@@ -104,6 +104,31 @@ surveillance reprend.
 - Pour une borne : `SuperResScaler.exe --tray` (ou le réglage *Démarrer dans la zone de
   notification*) au démarrage de Windows, avec un profil par jeu.
 
+### Capturer un écran complet
+
+Au lieu d'une fenêtre, SuperResScaler peut capturer tout un écran (par exemple un jeu qui s'affiche
+sur un second écran) et le montrer sur un autre, avec le même ratio d'aspect, les mêmes shaders, le
+miroir, le recadrage et le changement de résolution.
+
+- **Une fois** : page *Accueil*, carte *Écran complet*. Les réglages par défaut s'appliquent, et la
+  capture dure jusqu'à l'arrêt (bouton ou raccourci).
+- **Pour un jeu** : dans son profil, section *Capture*, choisir l'écran dans **Source**. La fenêtre
+  du profil, si elle existe, décide alors seulement de la fin : quand le jeu se ferme, la capture
+  s'arrête. Le profil garde l'identifiant du moniteur, pas son numéro : il reste valable si Windows
+  renumérote les écrans.
+- **En ligne de commande** : `--display <écran>`. Seul, il démarre aussitôt ; avec `--process`, il
+  attend le jeu et s'arrête avec lui.
+
+Si **Écran de sortie** reste sur *Auto*, l'image part sur un autre écran que celui capturé (le
+principal d'abord). S'il n'y a qu'un écran, ou si la sortie est le même écran, la sortie est retirée
+de la capture pour ne pas se filmer elle-même.
+
+**Numéros.** Windows ne donne pas accès aux numéros de *Paramètres > Affichage*. Le numéro proposé
+est celui du pilote (le `n` de `\\.\DISPLAYn`, comme Hikaruloader), qui peut être différent. Le
+bouton **Identifier** affiche le numéro sur chaque écran : s'il ne correspond pas à celui de Windows,
+corrigez-le dans *Paramètres > Écrans*. `--display` et `--monitor` acceptent ce numéro ou une partie
+du nom du moniteur (`--display DELL`).
+
 ### Raccourcis (modifiables dans Paramètres)
 
 | Raccourci | Action |
@@ -123,6 +148,9 @@ SuperResScaler.exe --title "Daytona" --crop 0,0,0,16 --delay 3
 SuperResScaler.exe --process game.exe --mode fullscreen --aspect 4:3_letterbox
 SuperResScaler.exe --process game.exe --aspect 4:3_crop --barrel --barrel-center 60
 SuperResScaler.exe --process game.exe --resolution 1920x240@60
+SuperResScaler.exe --process game.exe --mirror-x
+SuperResScaler.exe --display 2 --monitor 1 --aspect 4:3
+SuperResScaler.exe --display 2 --process game.exe --resolution 1920x240@60
 SuperResScaler.exe --process launcher.exe --persist
 SuperResScaler.exe --foreground --delay 3
 ```
@@ -150,8 +178,10 @@ d'affichage disponibles (comme `SetResolution LIST`). Codes de sortie : `0` OK,
 | **Ratio d'aspect** | `original`, `4:3`, `16:9`, `4:3_stretch`, `4:3_crop`… comme le linuxloader — voir ci-dessous |
 | **Rognage** | formats `_crop` : position de la partie gardée, barillet (milieu non déformé, rayon) — voir ci-dessous |
 | **Forme de l'écran** | forme physique de l'écran. `auto` : 4:3 pour un mode super-résolution (au plus 600 lignes et plus de 2 fois plus large que haut : 1280x240, 1920x240, 2560x240, 1920x480i…), pixels carrés sinon (écran LCD) |
-| **Écran de sortie** | *Auto* = l'écran où se trouve la fenêtre du jeu |
+| **Écran de sortie** | *Auto* = l'écran où se trouve la fenêtre du jeu ; si tout un écran est capturé, un autre que celui-là |
 | **Résolution** | mode d'affichage pendant la mise à l'échelle (ex. `1920x240@60`) — voir ci-dessous |
+| **Miroir** | retourne toute la sortie pour un projecteur : X (`--mirror-x`) = gauche/droite, projecteur derrière un écran ; Y (`--mirror-y`) = haut/bas, projecteur par le dessus ; X et Y = image tournée de 180° |
+| **Source** | la fenêtre du jeu, ou tout un écran (`--display`) — voir *Capturer un écran complet* |
 | **Zone client uniquement** | ignore la barre de titre et les bordures |
 | **Recadrage manuel** | pixels à retirer de chaque côté (barres d'outils d'émulateur, bords parasites…) |
 | **Recadrage automatique** | retire les bandes noires (jeu 4:3 centré dans une fenêtre plus large). La zone détectée ne fait que grandir pour éviter les sauts lors des scènes sombres |
@@ -290,12 +320,18 @@ bandes, rend chaque shader en 1920x240 et 1280x240, rend les formats d'aspect (b
 `_stretch`, `_crop`, barillet) en vérifiant des pixels précis, demande au pilote s'il accepte les
 modes d'affichage sans les appliquer (`CDS_TEST`), lance une vraie session en prévisualisation
 (et en plein écran avec `--selftest-overlay`, ~2 s) et vérifie les pixels affichés.
+Il capture aussi l'écran entier où se trouve la mire, y retrouve celle-ci et lance une session dont
+la sortie est sur cet écran ; de cette capture, seul le rectangle de la mire est enregistré.
 Résultats dans `selftest.txt` + images PNG.
 
 ## Limites
 
 - Les jeux en **plein écran exclusif** ne peuvent pas être capturés : utiliser le mode fenêtré
   ou « plein écran fenêtré / borderless » du jeu.
+- La capture d'un **écran complet** ne garantit pas non plus le plein écran exclusif (selon la
+  version de Windows et le jeu) : préférer le mode borderless. L'écran capturé doit faire partie du
+  bureau étendu (pas désactivé, pas en duplication).
+- Sous **Windows 10**, l'écran capturé porte un liseré jaune imposé par le système.
 - Une fenêtre **réduite** n'est pas capturée (l'overlay se masque jusqu'à sa restauration).
 - Les **clics souris** traversent l'overlay et atteignent ce qui se trouve dessous aux mêmes
   coordonnées écran : ils ne sont pas remappés vers la position dans le jeu. Clavier et manettes
@@ -318,7 +354,7 @@ src/SuperResScaler/
   Engine/Geometry.cs          zone source, placement (formats du linuxloader, barillet)
   Native/DisplayModes.cs      modes d'affichage, changement et retour à la résolution d'origine
   Engine/BlackBarDetector.cs  détection des bandes noires
-  Capture/WindowCapture.cs    Windows.Graphics.Capture
+  Capture/FrameCapture.cs     Windows.Graphics.Capture (fenêtre ou écran)
   Capture/WinRTInterop.cs     ponts WinRT <-> D3D11
   Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders
   Rendering/SwapChainPresenter.cs  swap chain flip-model basse latence
@@ -326,6 +362,7 @@ src/SuperResScaler/
   UI/MainForm.cs              fenêtre façon Magpie : navigation, pages, zone de notification
   UI/Pages/                   Accueil, profil (par défaut ou jeu), Paramètres, À propos
   UI/Controls.cs, Dialogs.cs  cartes de réglages, interrupteurs, raccourcis, Nouveau profil
+  UI/DisplayIdentifier.cs     bouton Identifier : grand numéro sur chaque écran
   Shaders/                    shaders HLSL (copiés à côté de l'exécutable)
 tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage, profils)
 ```

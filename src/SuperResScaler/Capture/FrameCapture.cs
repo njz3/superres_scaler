@@ -37,10 +37,11 @@ internal sealed class CapturedFrame : IDisposable
 }
 
 /// <summary>
-/// Captures one window with Windows.Graphics.Capture. Works for occluded windows and
-/// borderless "fullscreen" games, but not for minimized windows or exclusive fullscreen.
+/// Captures one window or one whole display with Windows.Graphics.Capture. Windows are captured
+/// even when occluded, and borderless "fullscreen" games work, but not minimized windows or
+/// exclusive fullscreen.
 /// </summary>
-internal sealed class WindowCapture : IDisposable
+internal sealed class FrameCapture : IDisposable
 {
     private const DirectXPixelFormat PixelFormat = DirectXPixelFormat.B8G8R8A8UIntNormalized;
     private const int BufferCount = 2;
@@ -53,7 +54,13 @@ internal sealed class WindowCapture : IDisposable
     private SizeInt32? _pendingResize;
     private volatile bool _closed;
 
-    public WindowCapture(ID3D11Device d3dDevice, IntPtr hwnd, bool captureCursor)
+    public static FrameCapture ForWindow(ID3D11Device device, IntPtr hwnd, bool captureCursor)
+        => new(device, () => WinRTInterop.CreateItemForWindow(hwnd), captureCursor);
+
+    public static FrameCapture ForMonitor(ID3D11Device device, IntPtr hmonitor, bool captureCursor)
+        => new(device, () => WinRTInterop.CreateItemForMonitor(hmonitor), captureCursor);
+
+    private FrameCapture(ID3D11Device d3dDevice, Func<GraphicsCaptureItem> createItem, bool captureCursor)
     {
         if (!GraphicsCaptureSession.IsSupported())
             throw new NotSupportedException("Windows.Graphics.Capture n'est pas disponible (Windows 10 1903 ou plus récent requis).");
@@ -61,7 +68,7 @@ internal sealed class WindowCapture : IDisposable
         using (var dxgiDevice = d3dDevice.QueryInterface<IDXGIDevice>())
             _device = WinRTInterop.CreateDirect3DDevice(dxgiDevice);
 
-        _item = WinRTInterop.CreateItemForWindow(hwnd);
+        _item = createItem();
         _item.Closed += OnItemClosed;
         _poolSize = _item.Size;
 
@@ -75,7 +82,7 @@ internal sealed class WindowCapture : IDisposable
         Log.Info($"Capture started: item {_item.DisplayName} {_poolSize.Width}x{_poolSize.Height}");
     }
 
-    /// <summary>True once the captured window has been destroyed.</summary>
+    /// <summary>True once the captured window has been destroyed, or the display removed.</summary>
     public bool IsClosed => _closed;
 
     public void SetCursorCapture(bool enabled)

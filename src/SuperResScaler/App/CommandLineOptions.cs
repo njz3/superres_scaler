@@ -39,13 +39,18 @@ internal sealed partial class CommandLineOptions
           --barrel                   _crop : courbe les bords au lieu de les couper
           --barrel-center <%>        milieu non déformé (défaut 60)
           --barrel-radius <%>        rayon du cylindre (défaut 50)
+          --mirror-x                 miroir gauche/droite (projecteur derrière un écran)
+          --mirror-y                 miroir haut/bas (projecteur par le dessus)
           --display-aspect auto|4:3  forme physique de l'écran (auto : 4:3 en super-résolution)
           --crop g,h,d,b             recadrage manuel en pixels
           --autocrop                 recadrage automatique des bandes noires
           --window                   capture la fenêtre entière (pas seulement la zone client)
           --cursor                   capture le curseur
           --no-vsync                 désactive la synchro verticale
-          --monitor <n>              écran de sortie (1..N, 0 = celui de la fenêtre)
+          --display <écran>          capture cet écran entier au lieu de la fenêtre (numéro vu
+                                     avec --list-modes, ou partie du nom du moniteur). Seul :
+                                     démarre aussitôt ; avec --process : s'arrête avec le jeu
+          --monitor <écran>          écran de sortie (même format, 0 = automatique)
           --resolution 1920x240@60   mode d'affichage pendant la mise à l'échelle (aussi
                                      1280x480i) ; la résolution d'origine revient à l'arrêt
           --preview [LxH]            fenêtre de prévisualisation au lieu du plein écran
@@ -68,6 +73,9 @@ internal sealed partial class CommandLineOptions
     public string? ClassName { get; private set; }
     public IntPtr Hwnd { get; private set; }
     public bool Foreground { get; private set; }
+
+    /// <summary>The display to capture (--display).</summary>
+    public string? Display { get; private set; }
     public double WaitSeconds { get; private set; } = 60;
     public double? DelaySeconds { get; private set; }
     public bool Persist { get; private set; }
@@ -75,7 +83,12 @@ internal sealed partial class CommandLineOptions
 
     private readonly List<Action<ScalingOptions>> _overrides = new();
 
-    public bool IsHeadless => Process != null || Title != null || ClassName != null || Hwnd != IntPtr.Zero || Foreground;
+    public bool IsHeadless => TargetsWindow || Display != null;
+
+    /// <summary>A display is captured with no window to wait for.</summary>
+    public bool DisplayOnly => Display != null && !TargetsWindow;
+
+    private bool TargetsWindow => Process != null || Title != null || ClassName != null || Hwnd != IntPtr.Zero || Foreground;
 
     public double EffectiveDelay => DelaySeconds ?? (Foreground ? 3 : 1);
 
@@ -167,6 +180,8 @@ internal sealed partial class CommandLineOptions
                     break;
                 }
                 case "--barrel": o._overrides.Add(s => s.CropBarrel = true); break;
+                case "--mirror-x": o._overrides.Add(s => s.MirrorX = true); break;
+                case "--mirror-y": o._overrides.Add(s => s.MirrorY = true); break;
                 case "--barrel-center":
                 {
                     int center = (int)ParseSigned(arg, Value(), 0, 100);
@@ -189,7 +204,19 @@ internal sealed partial class CommandLineOptions
                 case "--window": o._overrides.Add(s => s.ClientAreaOnly = false); break;
                 case "--cursor": o._overrides.Add(s => s.CaptureCursor = true); break;
                 case "--no-vsync": o._overrides.Add(s => s.VSync = false); break;
-                case "--monitor": { int m = (int)ParseDouble(arg, Value()); o._overrides.Add(s => s.Monitor = m); break; }
+                case "--monitor":
+                {
+                    string v = Value().Trim();
+                    o._overrides.Add(s => s.Monitor = v == "0" ? string.Empty : v);
+                    break;
+                }
+                case "--display":
+                {
+                    string v = Value().Trim();
+                    o.Display = v;
+                    o._overrides.Add(s => s.SourceDisplay = v);
+                    break;
+                }
                 case "--resolution":
                 case "--res":
                 {

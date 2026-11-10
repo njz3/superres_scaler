@@ -24,6 +24,8 @@ internal struct ShaderConstants
     public float Time;
     public uint FrameCount;
     public float OutputX, OutputY;
+    public float MirrorSignX, MirrorSignY; // read by the vertex shaders only
+    private readonly float _padding0, _padding1;
 }
 
 /// <summary>
@@ -32,24 +34,28 @@ internal struct ShaderConstants
 /// </summary>
 internal sealed class Renderer : IDisposable
 {
+    // The mirror flips the geometry, not the texture coordinates: the drawing itself is mirrored,
+    // so that it holds for an off-centre crop or barrel, and every pixel shader works unchanged.
     private const string VertexShaderSource = """
+        cbuffer Constants : register(b0) { float2 MirrorSign : packoffset(c3); };
         struct VSOutput { float4 Position : SV_POSITION; float2 TexCoord : TEXCOORD0; };
         VSOutput main(uint id : SV_VertexID)
         {
             VSOutput o;
             o.TexCoord = float2((id << 1) & 2, id & 2);
-            o.Position = float4(o.TexCoord * float2(2, -2) + float2(-1, 1), 0, 1);
+            o.Position = float4((o.TexCoord * float2(2, -2) + float2(-1, 1)) * MirrorSign, 0, 1);
             return o;
         }
         """;
 
     // The CROP_BARREL strip: positions in clip space of the destination viewport, texture coordinates.
     private const string StripVertexShaderSource = """
+        cbuffer Constants : register(b0) { float2 MirrorSign : packoffset(c3); };
         struct VSOutput { float4 Position : SV_POSITION; float2 TexCoord : TEXCOORD0; };
         VSOutput main(float2 position : POSITION, float2 texCoord : TEXCOORD0)
         {
             VSOutput o;
-            o.Position = float4(position, 0, 1);
+            o.Position = float4(position * MirrorSign, 0, 1);
             o.TexCoord = texCoord;
             return o;
         }
@@ -255,6 +261,8 @@ internal sealed class Renderer : IDisposable
             FrameCount = _frameCount++,
             OutputX = dest.X,
             OutputY = dest.Y,
+            MirrorSignX = placement.MirrorX ? -1f : 1f,
+            MirrorSignY = placement.MirrorY ? -1f : 1f,
         };
         Context.UpdateSubresource(in constants, _constantBuffer);
 
@@ -266,6 +274,7 @@ internal sealed class Renderer : IDisposable
         Context.PSSetSampler(0, _pointSampler);
         Context.PSSetSampler(1, _linearSampler);
         Context.PSSetConstantBuffer(0, _constantBuffer);
+        Context.VSSetConstantBuffer(0, _constantBuffer);
         if (placement.Barrel is { } barrel)
         {
             DrawStrip(barrel);

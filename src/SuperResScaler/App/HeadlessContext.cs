@@ -52,6 +52,19 @@ internal sealed class HeadlessContext : ApplicationContext
 
     private void OnTick(object? sender, EventArgs e)
     {
+        if (_cli.DisplayOnly)
+        {
+            _delay ??= Stopwatch.StartNew();
+            if (_delay.Elapsed.TotalSeconds < _cli.EffectiveDelay)
+                return;
+            _timer.Stop();
+            if (_controller.StartDisplay(_cli.Display!, ResolveOptions(null)))
+                _hasScaled = true;
+            else
+                Exit(ExitStartFailed);
+            return;
+        }
+
         if (!_cli.Foreground && _target == IntPtr.Zero)
         {
             _target = FindTarget();
@@ -87,9 +100,9 @@ internal sealed class HeadlessContext : ApplicationContext
     private IntPtr FindTarget()
         => WindowInfo.EnumerateCandidates().FirstOrDefault(_cli.Matches)?.Handle ?? IntPtr.Zero;
 
-    private ScalingOptions ResolveOptions(WindowInfo window)
+    private ScalingOptions ResolveOptions(WindowInfo? window)
     {
-        ScalingOptions baseOptions = _controller.Settings.ResolveOptions(window);
+        ScalingOptions baseOptions = window != null ? _controller.Settings.ResolveOptions(window) : _controller.Settings.Defaults;
         if (_cli.Profile != null)
         {
             if (_controller.Settings.FindProfileByName(_cli.Profile) is { } profile)

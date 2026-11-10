@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using SuperResScaler.App;
 using SuperResScaler.Config;
+using SuperResScaler.Native;
 using SuperResScaler.Rendering;
 
 namespace SuperResScaler.UI.Pages;
@@ -19,6 +20,15 @@ internal sealed class SettingsPage : Page
     private readonly KeyChips _shaderChips = new();
     private readonly KeyChips _autoCropChips = new();
     private readonly SettingCard _hotkeyStatus;
+    private readonly TableLayoutPanel _displays = new()
+    {
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        ColumnCount = 1,
+        GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+        BackColor = Theme.PageBackground,
+        Margin = Padding.Empty,
+    };
 
     public SettingsPage(ScalerController controller) : base(controller, "Paramètres")
     {
@@ -40,6 +50,11 @@ internal sealed class SettingsPage : Page
         AddCard(Theme.GlyphCrop, "Refaire le recadrage automatique", "Oublie les bandes noires détectées",
             _autoCropChips, UiFactory.IconButton(Theme.GlyphEdit, "Modifier", (_, _) => EditHotkey(h => h.ResetAutoCrop, (h, v) => h.ResetAutoCrop = v, _autoCropChips)));
         _hotkeyStatus = AddCard(Theme.GlyphInfo, "État des raccourcis", null);
+
+        AddSection("Écrans",
+            "Windows ne donne pas accès aux numéros de Paramètres > Affichage : le numéro proposé est celui du pilote. Comparez avec « Identifier » ici et dans Windows, et corrigez-le si besoin.");
+        AddCard(Theme.GlyphMonitor, "Identifier les écrans", "Affiche son numéro sur chaque écran", UiFactory.Button("Identifier", (_, _) => DisplayIdentifier.Show()));
+        AddControl(_displays);
 
         AddSection("Fichiers");
         AddCard(Theme.GlyphFolder, "Réglages et journal", controller.Store.FilePath,
@@ -69,7 +84,43 @@ internal sealed class SettingsPage : Page
         _toggleChips.Hotkey = s.Hotkeys.ToggleScaling;
         _shaderChips.Hotkey = s.Hotkeys.NextShader;
         _autoCropChips.Hotkey = s.Hotkeys.ResetAutoCrop;
+        RebuildDisplays();
         Loading = false;
+    }
+
+    /// <summary>One card per display, with its number. Called while Loading.</summary>
+    private void RebuildDisplays()
+    {
+        foreach (Control card in _displays.Controls.Cast<Control>().ToList())
+            card.Dispose();
+        _displays.Controls.Clear();
+        if (_displays.ColumnStyles.Count == 0)
+            _displays.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        foreach (var monitor in MonitorInfo.GetAll())
+        {
+            var number = UiFactory.Number(1, 99, 64);
+            number.Value = Math.Clamp(monitor.Number, 1, 99);
+            number.ValueChanged += (_, _) => SetDisplayNumber(monitor, (int)number.Value);
+            RECT b = monitor.Bounds;
+            _displays.Controls.Add(new SettingCard(Theme.GlyphMonitor, monitor.Name,
+                $"{b.Width}x{b.Height} à ({b.Left},{b.Top}){(monitor.IsPrimary ? ", principal" : "")} — {monitor.DeviceName}",
+                UiFactory.Text("Numéro"), number));
+        }
+    }
+
+    private void SetDisplayNumber(MonitorInfo monitor, int number)
+    {
+        if (Loading)
+            return;
+        var numbers = new Dictionary<string, int>(Controller.Settings.DisplayNumbers);
+        if (number == monitor.DriverNumber)
+            numbers.Remove(monitor.Id);
+        else
+            numbers[monitor.Id] = number;
+        Controller.Settings.DisplayNumbers = numbers;
+        Controller.ApplyDisplayNumbers();
+        Controller.Store.Save();
     }
 
     private void Save(Action<AppSettings> apply, bool watcher = false)

@@ -7,9 +7,10 @@ namespace SuperResScaler.Engine;
 
 /// <summary>
 /// The picture on the output: drawn into <paramref name="Dest"/> (output pixels) from the
-/// <paramref name="Source"/> part of the image (source pixels), or bent along <paramref name="Barrel"/>.
+/// <paramref name="Source"/> part of the image (source pixels), or bent along <paramref name="Barrel"/>,
+/// the whole drawing flipped within <paramref name="Dest"/> on the mirrored axes.
 /// </summary>
-internal sealed record Placement(RectangleF Dest, Rectangle Source, BarrelStrip? Barrel);
+internal sealed record Placement(RectangleF Dest, Rectangle Source, BarrelStrip? Barrel, bool MirrorX = false, bool MirrorY = false);
 
 /// <summary>
 /// CROP_BARREL, ported from linuxloader's blitStretching.c (barrelSetup, barrelArc, barrelSource):
@@ -193,7 +194,13 @@ internal static class Geometry
         // Whole pixels, edges rounded independently so that bars on both sides stay even.
         float left = (float)Math.Round(x), top = (float)Math.Round(y);
         var dest = RectangleF.FromLTRB(left, top, (float)Math.Round(x + width), (float)Math.Round(y + height));
-        return new Placement(dest, source, barrel);
+
+        // The bars are mirrored too: the output is the exact mirror image of the normal one.
+        if (options.MirrorX)
+            dest = RectangleF.FromLTRB(outputWidth - dest.Right, dest.Top, outputWidth - dest.Left, dest.Bottom);
+        if (options.MirrorY)
+            dest = RectangleF.FromLTRB(dest.Left, outputHeight - dest.Bottom, dest.Right, outputHeight - dest.Top);
+        return new Placement(dest, source, barrel, options.MirrorX, options.MirrorY);
     }
 
     /// <summary>
@@ -214,10 +221,19 @@ internal static class Geometry
             area = new RECT(origin.X, origin.Y, origin.X + client.Width, origin.Y + client.Height);
         }
 
-        int left = area.Left - frame.Left + Math.Max(0, options.CropLeft);
-        int top = area.Top - frame.Top + Math.Max(0, options.CropTop);
-        int right = area.Right - frame.Left - Math.Max(0, options.CropRight);
-        int bottom = area.Bottom - frame.Top - Math.Max(0, options.CropBottom);
+        return ApplyCropMargins(options, area.Left - frame.Left, area.Top - frame.Top, area.Right - frame.Left, area.Bottom - frame.Top, contentWidth, contentHeight);
+    }
+
+    /// <summary>Region of a captured display to scale: all of it minus the manual crop margins.</summary>
+    public static Rectangle ComputeDisplayRegion(ScalingOptions options, int contentWidth, int contentHeight)
+        => ApplyCropMargins(options, 0, 0, contentWidth, contentHeight, contentWidth, contentHeight);
+
+    private static Rectangle ApplyCropMargins(ScalingOptions options, int left, int top, int right, int bottom, int contentWidth, int contentHeight)
+    {
+        left += Math.Max(0, options.CropLeft);
+        top += Math.Max(0, options.CropTop);
+        right -= Math.Max(0, options.CropRight);
+        bottom -= Math.Max(0, options.CropBottom);
 
         left = Math.Clamp(left, 0, contentWidth);
         top = Math.Clamp(top, 0, contentHeight);

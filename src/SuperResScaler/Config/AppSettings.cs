@@ -28,6 +28,12 @@ public sealed class AppSettings
 
     public HotkeySettings Hotkeys { get; set; } = new();
 
+    /// <summary>
+    /// Numbers corrected by hand to match Windows' Settings > Display, by display id: Windows
+    /// offers no way to read them, and the driver's own numbers can differ.
+    /// </summary>
+    public Dictionary<string, int> DisplayNumbers { get; set; } = new();
+
     /// <summary>Delay of the "scale the foreground window in N s" button.</summary>
     public int ScaleDelaySeconds { get; set; } = 3;
 

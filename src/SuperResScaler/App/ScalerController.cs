@@ -27,6 +27,7 @@ internal sealed class ScalerController : IDisposable
         _ui = SynchronizationContext.Current ?? throw new InvalidOperationException("ScalerController must be created on the UI thread.");
         Store = store;
         Watcher = new ProfileWatcher(this);
+        ApplyDisplayNumbers();
     }
 
     public SettingsStore Store { get; }
@@ -37,6 +38,9 @@ internal sealed class ScalerController : IDisposable
 
     public bool IsScaling => _session != null;
     public WindowInfo? ScaledWindow { get; private set; }
+
+    /// <summary>What is being scaled, for display (a window or a whole display); null when idle.</summary>
+    public string? ScaledLabel { get; private set; }
 
     /// <summary>The settings object (profile or defaults) the running session was started from.</summary>
     public ScalingOptions? ActiveOptions { get; private set; }
@@ -97,23 +101,60 @@ internal sealed class ScalerController : IDisposable
         if (User32.IsIconic(hwnd))
             User32.ShowWindow(hwnd, User32.SW_RESTORE);
 
+        if (!Launch(hwnd, options))
+            return false;
+
+        ActiveOptions = options;
+        ScaledWindow = info;
+        var display = MonitorInfo.Find(MonitorInfo.GetAll(), options.SourceDisplay);
+        ScaledLabel = display == null
+            ? $"« {info.Title} » ({info.ProcessName})"
+            : $"{display}, jusqu'à la fermeture de « {info.Title} »";
+        if (activate)
+            User32.SetForegroundWindow(hwnd);
+        Report($"Mise à l'échelle de {ScaledLabel} — shader {_session!.ActiveShader}");
+        StateChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>Scales a whole display, tied to no window: it runs until it is stopped.</summary>
+    public bool StartDisplay(string display, ScalingOptions? options = null)
+    {
+        CancelDelayedScale();
+        StopScaling(quiet: true);
+
+        options ??= Settings.Defaults;
+        var monitor = MonitorInfo.Find(MonitorInfo.GetAll(), display);
+        if (monitor == null)
+        {
+            Report($"Écran à capturer introuvable : {display}");
+            return false;
+        }
+
+        var effective = options.Snapshot();
+        effective.SourceDisplay = monitor.Id;
+        if (!Launch(IntPtr.Zero, effective))
+            return false;
+
+        ActiveOptions = options; // edits of these settings still apply live
+        ScaledLabel = monitor.ToString();
+        Report($"Mise à l'échelle de {ScaledLabel} — shader {_session!.ActiveShader}");
+        StateChanged?.Invoke();
+        return true;
+    }
+
+    private bool Launch(IntPtr window, ScalingOptions options)
+    {
         try
         {
-            _session = ScalingSession.Start(hwnd, options, OnSessionEnded, message => _ui.Post(_ => Report(message), null));
+            _session = ScalingSession.Start(window, options, OnSessionEnded, message => _ui.Post(_ => Report(message), null));
+            return true;
         }
         catch (Exception ex)
         {
             Report($"Échec du démarrage : {ex.Message}");
             return false;
         }
-
-        ActiveOptions = options;
-        ScaledWindow = info;
-        if (activate)
-            User32.SetForegroundWindow(hwnd);
-        Report($"Mise à l'échelle de « {info.Title} » — shader {_session.ActiveShader}");
-        StateChanged?.Invoke();
-        return true;
     }
 
     public void StopScaling() => StopScaling(quiet: false);
@@ -125,8 +166,7 @@ internal sealed class ScalerController : IDisposable
             return;
         var window = ScaledWindow;
         _session = null;
-        ActiveOptions = null;
-        ScaledWindow = null;
+        ClearState();
         session.Stop();
         if (!quiet)
             Report("Mise à l'échelle arrêtée");
@@ -142,7 +182,22 @@ internal sealed class ScalerController : IDisposable
             StopScaling();
             return;
         }
-        StartScaling(GetForegroundRoot(), activate: false);
+        StartForeground();
+    }
+
+    /// <summary>
+    /// The foreground window with its profile. When the defaults capture a display, that display
+    /// is scaled for itself: the session must not end with whichever window had the focus.
+    /// </summary>
+    private void StartForeground()
+    {
+        IntPtr window = GetForegroundRoot();
+        var info = WindowInfo.FromHandle(window);
+        var options = info != null ? Settings.ResolveOptions(info) : Settings.Defaults;
+        if (options is not Profile && !string.IsNullOrWhiteSpace(options.SourceDisplay))
+            StartDisplay(options.SourceDisplay, options);
+        else
+            StartScaling(window, activate: false);
     }
 
     /// <summary>Gives the user a few seconds to activate the game window, then scales it.</summary>
@@ -160,7 +215,7 @@ internal sealed class ScalerController : IDisposable
                 return;
             }
             CancelDelayedScale();
-            StartScaling(GetForegroundRoot(), activate: false);
+            StartForeground();
         };
         _delayTimer.Start();
     }
@@ -197,13 +252,22 @@ internal sealed class ScalerController : IDisposable
             return; // already stopped from here
         var window = ScaledWindow;
         _session = null;
-        ActiveOptions = null;
-        ScaledWindow = null;
+        ClearState();
         if (reason != null)
             Report(reason);
         StateChanged?.Invoke();
         SessionEnded?.Invoke(window, reason);
     }, null);
+
+    private void ClearState()
+    {
+        ActiveOptions = null;
+        ScaledWindow = null;
+        ScaledLabel = null;
+    }
+
+    /// <summary>Publishes the display numbers corrected by hand in the settings.</summary>
+    public void ApplyDisplayNumbers() => MonitorInfo.SetNumbers(new Dictionary<string, int>(Settings.DisplayNumbers));
 
     public void Report(string message)
     {

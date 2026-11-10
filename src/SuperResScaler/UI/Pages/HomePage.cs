@@ -16,6 +16,7 @@ internal sealed class HomePage : Page
     private readonly KeyChips _toggleChips = new();
     private readonly NumericUpDown _delay = UiFactory.Number(1, 30, 60);
     private readonly ComboBox _windows = UiFactory.DropDown(320);
+    private readonly ComboBox _displays = UiFactory.DropDown(460);
     private readonly ListBox _history = new()
     {
         Font = Theme.Caption,
@@ -58,6 +59,10 @@ internal sealed class HomePage : Page
         _windows.DropDownWidth = Theme.S(520);
         AddCard(Theme.GlyphWindow, "Fenêtre précise", "Choisissez une fenêtre ouverte ; son profil s'applique s'il existe",
             _windows, UiFactory.AccentButton("Mettre à l'échelle", (_, _) => ScaleChosenWindow()));
+        _displays.DropDown += (_, _) => RefreshDisplays();
+        var displayCard = AddCard(Theme.GlyphMonitor, "Écran complet", "Tout un écran, avec les réglages par défaut, jusqu'à l'arrêt",
+            UiFactory.Button("Identifier", (_, _) => DisplayIdentifier.Show()), UiFactory.AccentButton("Mettre à l'échelle", (_, _) => ScaleChosenDisplay()));
+        displayCard.AddDetail(UiFactory.Row(_displays));
 
         AddSection("Activité récente");
         var historyCard = AddCard(Theme.GlyphHistory, "Journal", "Détections, démarrages et arrêts (le détail est dans SuperResScaler.log)");
@@ -73,6 +78,7 @@ internal sealed class HomePage : Page
         _watchToggle.Checked = Controller.Settings.AutoScaleEnabled;
         Loading = false;
         RefreshWindows();
+        RefreshDisplays();
         RefreshHistory();
         OnStateChanged();
     }
@@ -80,10 +86,10 @@ internal sealed class HomePage : Page
     public override void OnStateChanged()
     {
         var settings = Controller.Settings;
-        if (Controller.ScaledWindow is { } window)
+        if (Controller.ScaledLabel is { } label)
         {
             string profile = Controller.ActiveOptions is Profile p ? $"profil {p.DisplayName}" : "réglages par défaut";
-            _stateCard.Description = $"Active : « {window.Title} » ({window.ProcessName}), {profile}";
+            _stateCard.Description = $"Active : {label}, {profile}";
             _stateCard.DescriptionColor = Theme.Success;
         }
         else
@@ -123,6 +129,28 @@ internal sealed class HomePage : Page
                 _windows.SelectedIndex = index;
         }
         _windows.EndUpdate();
+    }
+
+    private void RefreshDisplays()
+    {
+        string? selected = (_displays.SelectedItem as MonitorInfo)?.Id;
+        _displays.BeginUpdate();
+        _displays.Items.Clear();
+        foreach (var monitor in MonitorInfo.GetAll())
+        {
+            int index = _displays.Items.Add(monitor);
+            if (monitor.Id == selected)
+                _displays.SelectedIndex = index;
+        }
+        _displays.EndUpdate();
+    }
+
+    private void ScaleChosenDisplay()
+    {
+        if (_displays.SelectedItem is MonitorInfo monitor)
+            Controller.StartDisplay(monitor.Id);
+        else
+            Controller.Report("Choisissez d'abord un écran");
     }
 
     private void ScaleChosenWindow()

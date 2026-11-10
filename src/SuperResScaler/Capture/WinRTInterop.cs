@@ -48,7 +48,12 @@ internal static unsafe class WinRTInterop
     }
 
     /// <summary>IGraphicsCaptureItemInterop::CreateForWindow.</summary>
-    public static GraphicsCaptureItem CreateItemForWindow(IntPtr hwnd)
+    public static GraphicsCaptureItem CreateItemForWindow(IntPtr hwnd) => CreateItem(hwnd, 3);
+
+    /// <summary>IGraphicsCaptureItemInterop::CreateForMonitor.</summary>
+    public static GraphicsCaptureItem CreateItemForMonitor(IntPtr hmonitor) => CreateItem(hmonitor, 4);
+
+    private static GraphicsCaptureItem CreateItem(IntPtr handle, int vtableSlot)
     {
         const string className = "Windows.Graphics.Capture.GraphicsCaptureItem";
         Marshal.ThrowExceptionForHR(WindowsCreateString(className, className.Length, out IntPtr hstring));
@@ -58,10 +63,10 @@ internal static unsafe class WinRTInterop
             try
             {
                 // IUnknown (3 slots), then CreateForWindow, CreateForMonitor.
-                var createForWindow = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, Guid*, IntPtr*, int>)(*(IntPtr**)interop)[3];
+                var create = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, Guid*, IntPtr*, int>)(*(IntPtr**)interop)[vtableSlot];
                 Guid iid = IID_IGraphicsCaptureItem;
                 IntPtr itemPtr;
-                Marshal.ThrowExceptionForHR(createForWindow(interop, hwnd, &iid, &itemPtr));
+                Marshal.ThrowExceptionForHR(create(interop, handle, &iid, &itemPtr));
                 try
                 {
                     return GraphicsCaptureItem.FromAbi(itemPtr);

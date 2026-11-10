@@ -21,7 +21,7 @@ on peut les modifier ou en ajouter sans recompiler l'application
 | `OutputOffset` | `float2` | coin haut-gauche de la destination sur l'écran |
 | `Time` | `float` | secondes depuis le début de la mise à l'échelle |
 | `FrameCount` | `uint` | numéro d'image |
-| `input.TexCoord` | `float2` | 0..1 sur la destination, au centre des pixels |
+| `input.TexCoord` | `float2` | 0..1 sur la destination, au centre des pixels (avec le miroir, le dessin est déjà retourné : rien à gérer dans un shader) |
 | `Texel(int2 p)` | fonction | lit un pixel source (bords clampés) |
 
 ## Exemple

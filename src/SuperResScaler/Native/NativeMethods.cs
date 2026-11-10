@@ -111,6 +111,85 @@ internal struct DEVMODE
     };
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct LUID
+{
+    public uint LowPart;
+    public int HighPart;
+}
+
+/// <summary>DISPLAYCONFIG_PATH_INFO with its source and target parts flattened.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct DISPLAYCONFIG_PATH_INFO
+{
+    public LUID sourceAdapterId;
+    public uint sourceId;
+    public uint sourceModeInfoIdx;
+    public uint sourceStatusFlags;
+    public LUID targetAdapterId;
+    public uint targetId;
+    public uint targetModeInfoIdx;
+    public uint outputTechnology;
+    public uint rotation;
+    public uint scaling;
+    public uint refreshRateNumerator;
+    public uint refreshRateDenominator;
+    public uint scanLineOrdering;
+    public int targetAvailable;
+    public uint targetStatusFlags;
+    public uint flags;
+}
+
+/// <summary>Only its size matters here: QueryDisplayConfig fills it, nothing reads it.</summary>
+[StructLayout(LayoutKind.Sequential, Size = 64)]
+internal struct DISPLAYCONFIG_MODE_INFO
+{
+    public uint infoType;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct DISPLAYCONFIG_DEVICE_INFO_HEADER
+{
+    public uint type;
+    public uint size;
+    public LUID adapterId;
+    public uint id;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct DISPLAYCONFIG_SOURCE_DEVICE_NAME
+{
+    public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string viewGdiDeviceName;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct DISPLAY_DEVICE
+{
+    public int cb;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+    public uint StateFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct DISPLAYCONFIG_TARGET_DEVICE_NAME
+{
+    public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+    public uint flags;
+    public uint outputTechnology;
+    public ushort edidManufactureId;
+    public ushort edidProductCodeId;
+    public uint connectorInstance;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+    public string monitorFriendlyDeviceName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+    public string monitorDevicePath;
+}
+
 internal delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
 internal static class User32
@@ -199,6 +278,22 @@ internal static class User32
 
     [DllImport(Dll)] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
     [DllImport(Dll, CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX info);
+
+    public const uint QDC_ONLY_ACTIVE_PATHS = 2;
+    public const uint DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME = 1;
+    public const uint DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME = 2;
+    public const uint WDA_NONE = 0;
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    [DllImport(Dll)] public static extern int GetDisplayConfigBufferSizes(uint flags, out uint pathCount, out uint modeCount);
+    [DllImport(Dll)]
+    public static extern int QueryDisplayConfig(uint flags, ref uint pathCount, [Out] DISPLAYCONFIG_PATH_INFO[] paths,
+        ref uint modeCount, [Out] DISPLAYCONFIG_MODE_INFO[] modes, IntPtr currentTopologyId);
+    [DllImport(Dll, EntryPoint = "DisplayConfigGetDeviceInfo")] public static extern int DisplayConfigGetSourceName(ref DISPLAYCONFIG_SOURCE_DEVICE_NAME info);
+    [DllImport(Dll, EntryPoint = "DisplayConfigGetDeviceInfo")] public static extern int DisplayConfigGetTargetName(ref DISPLAYCONFIG_TARGET_DEVICE_NAME info);
+    [DllImport(Dll, CharSet = CharSet.Unicode)] public static extern bool EnumDisplayDevices(string device, uint index, ref DISPLAY_DEVICE info, uint flags);
+    public const uint DISPLAY_DEVICE_ACTIVE = 1;
+    [DllImport(Dll, SetLastError = true)] public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
     [DllImport(Dll)] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc callback, IntPtr data);
 
     [DllImport(Dll, SetLastError = true)] public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);

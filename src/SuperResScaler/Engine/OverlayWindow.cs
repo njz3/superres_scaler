@@ -69,6 +69,15 @@ internal sealed class OverlayWindow : IDisposable
 
     public void Hide() => User32.ShowWindow(Handle, User32.SW_HIDE);
 
+    /// <summary>Keeps this window out of screen captures, when it is on the display being captured.</summary>
+    public bool ExcludeFromCapture()
+    {
+        if (User32.SetWindowDisplayAffinity(Handle, User32.WDA_EXCLUDEFROMCAPTURE))
+            return true;
+        Log.Warn($"SetWindowDisplayAffinity failed: {Marshal.GetLastWin32Error()}");
+        return false;
+    }
+
     /// <summary>Re-asserts the top-most position (a top-most game window may have been activated above us).</summary>
     public void BringToTop()
         => User32.SetWindowPos(Handle, User32.HWND_TOPMOST, 0, 0, 0, 0, User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);

@@ -245,8 +245,8 @@ internal sealed class MainForm : Form
     private void OnControllerStateChanged()
     {
         _current?.OnStateChanged();
-        string text = _controller.ScaledWindow is { } window
-            ? $"SuperResScaler — {window.Title}"
+        string text = _controller.ScaledLabel is { } label
+            ? $"SuperResScaler — {label}"
             : _controller.Watcher.Active ? "SuperResScaler — surveillance des profils" : "SuperResScaler";
         _tray.Text = text.Length <= 63 ? text : text[..62] + "…";
     }
