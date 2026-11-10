@@ -17,6 +17,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 6 | 26/10 | Mettre ces notes dans le fichier de suivi | ✅ ce fichier |
 | 7 | 10/11 | Pull ; options de miroir X/Y de la sortie (projection) | ⚠️ fait : rendu vérifié hors écran (12 combinaisons), pas essayé sur un projecteur |
 | 8 | 10/11 | Capturer un écran complet et l'afficher sur un autre, avec la numérotation de Windows | ⚠️ fait : capture, session et exclusion vérifiées par l'auto-test sur un seul écran ; pas essayé avec deux écrans ni sur une borne, numéro égal à celui de Windows non vérifiable automatiquement |
+| 9 | 10/11 | Faire une release | ⚠️ 0.3.0 (`2230d17` + numéro de version), 145 tests OK ; auto-test 40/44 : les 4 contrôles qui lisent l'écran voient une image assombrie (×0,55), cause non identifiée, le même code passait 44/44 peu avant |
 
 ## Releases
 
@@ -27,6 +28,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 |:--|:--|:--|:--|:--|--:|:--|
 | 23/10 | 0.1.0 | `d62ac1d` | autonome (runtime embarqué) | exe, `Shaders/`, `README.md`, PDB | 53 Mo | 78/78 tests, auto-test OK |
 | 26/10 | 0.2.1 | `2f76561` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,6 Mo | 100/100 tests, auto-test 25/25 |
+| 10/11 | 0.3.0 | `2230d17` | autonome (runtime embarqué), sur l'autre PC dans `emulateurs\releases` | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,7 Mo | 145/145 tests, auto-test 40/44 (demande 9) |
 
 ## Points ouverts
 
