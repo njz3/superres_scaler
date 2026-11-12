@@ -1,7 +1,7 @@
 # Suivi des demandes et du développement
 
-Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `2f76561`
-(version 0.2.1). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
+Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `58b34cb`
+(version 0.3.0). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
 
 Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait, non vérifié
 
@@ -18,6 +18,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 7 | 10/11 | Pull ; options de miroir X/Y de la sortie (projection) | ⚠️ fait : rendu vérifié hors écran (12 combinaisons), pas essayé sur un projecteur |
 | 8 | 10/11 | Capturer un écran complet et l'afficher sur un autre, avec la numérotation de Windows | ⚠️ fait : capture, session et exclusion vérifiées par l'auto-test sur un seul écran ; pas essayé avec deux écrans ni sur une borne, numéro égal à celui de Windows non vérifiable automatiquement |
 | 9 | 10/11 | Faire une release | ⚠️ 0.3.0 (`2230d17` + numéro de version), 145 tests OK ; auto-test 40/44 : les 4 contrôles qui lisent l'écran voient une image assombrie (×0,55), cause non identifiée, le même code passait 44/44 peu avant |
+| 10 | 12/11 | Refaire l'archive 0.3.0 au format du 26/10 (exe dépendant de .NET + `Shaders/`, sans PDB) | ✅ `58b34cb`, 7,2 Mo, 145 tests, auto-test 44/44 ; l'archive autonome du 10/11 est laissée en place |
+| 11 | 12/11 | Y a-t-il des choses à commiter localement ? | ✅ rien : arbre propre, `main` = `origin/main` |
 
 ## Releases
 
@@ -29,6 +31,10 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 23/10 | 0.1.0 | `d62ac1d` | autonome (runtime embarqué) | exe, `Shaders/`, `README.md`, PDB | 53 Mo | 78/78 tests, auto-test OK |
 | 26/10 | 0.2.1 | `2f76561` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,6 Mo | 100/100 tests, auto-test 25/25 |
 | 10/11 | 0.3.0 | `2230d17` | autonome (runtime embarqué), sur l'autre PC dans `emulateurs\releases` | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,7 Mo | 145/145 tests, auto-test 40/44 (demande 9) |
+| 12/11 | 0.3.0 | `58b34cb` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,2 Mo | 145/145 tests, auto-test 44/44 |
+
+L'archive du 10/11 suit un autre nom (`superres-scaler-0.3.0-20261110-g2230d17-njz3-windows-x64.zip`, avec un
+dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer » : faux pour l'archive du 12/11.
 
 ## Points ouverts
 
@@ -37,6 +43,10 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 - ⏳ Exe vraiment seul : intégrer les shaders dans l'exe (ressources). Pas demandé.
 - ⏳ Exe plus petit : remplacer `Microsoft.Windows.SDK.NET.dll` par quelques interfaces COM écrites à la main dans
   `Capture/` (exe ~3 Mo au lieu de 28, archive ~1 Mo). Pas demandé.
+- ⏳ Archive au format du 26/10 sans `settings.json` : au premier lancement l'exe en écrit un à côté de lui. Sur une
+  borne sous UWF, l'exclure du filtre ou le fournir dans l'image (l'archive du 10/11 en livrait un par défaut).
+- ⚠️ Assombrissement ×0,55 de l'auto-test du 10/11 (demande 9) : pas reproduit le 12/11, 44/44 sur ce PC avec le
+  même code. Cause toujours inconnue.
 
 ## Journal de développement
 
