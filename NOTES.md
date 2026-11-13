@@ -1,7 +1,7 @@
 # Suivi des demandes et du développement
 
-Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `a2c6933`
-(version 0.3.0, plus la version de test du 13/11). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
+Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `f50e6f6`
+(version 0.4.0, release du 13/11). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
 
 Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait, non vérifié
 
@@ -29,6 +29,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; auto-test complet sur Racecab1 sous .NET 8.0.30 (demande 19) |
 | 19 | 13/11 | Publier la version .NET 8 pour la borne | ✅ `a4f623b` poussé, archive `ga4f623b` (7,4 Mo). Sur Racecab1 (1809, .NET 8.0.30 déjà installé), d'après Image borne : auto-test 42 PASS, 1 SKIP, « ALL TESTS PASSED ». Écran virtuel et jeux Raw Thrills à essayer |
 | 20 | 13/11 | Supprimer le dossier `g26d22d7` (exe .NET 10) resté dans `releases` | ✅ mis à la corbeille ; restent les archives 0.2.1, 0.3.0 et la version de test `ga4f623b` |
+| 21 | 13/11 | Faire une release et demander à Image borne de la déployer | ⚠️ 0.4.0 (`f50e6f6` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test complet sur une copie ; déploiement demandé à Image borne |
 
 ## Releases
 
@@ -42,6 +43,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 10/11 | 0.3.0 | `2230d17` | autonome (runtime embarqué), sur l'autre PC dans `emulateurs\releases` | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,7 Mo | 145/145 tests, auto-test 40/44 (demande 9) |
 | 12/11 | 0.3.0 | `58b34cb` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,2 Mo | 145/145 tests, auto-test 44/44 |
 | 13/11 | 0.3.0+a4f623b (test) | `a4f623b` | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.3.0-20261113-ga4f623b-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test complet sur une copie sous .NET 8.0.34, en mode normal et en mode 1809 simulé |
+| 13/11 | 0.4.0 | `f50e6f6` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.0-20261113-gf50e6f6-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, et 50 + 1 SKIP en mode 1809 simulé |
 
 Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
