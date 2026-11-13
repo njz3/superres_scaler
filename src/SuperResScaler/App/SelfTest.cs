@@ -294,6 +294,12 @@ internal static class SelfTest
     /// real session whose output lies on that same display. Only the pattern's rectangle is ever
     /// saved: the rest of the capture is the user's screen.
     /// </summary>
+    /// <summary>
+    /// Width of the test sessions' preview window, shown 40 pixels from the display's left edge: 1280,
+    /// or less on a narrow display (a cabinet in 640x480), where Windows would shrink a wider window.
+    /// </summary>
+    internal static int PreviewWidth(MonitorInfo monitor) => Math.Clamp(monitor.Bounds.Width - 80, 320, 1280);
+
     private static IFrameSource OpenDisplayCapture(Renderer renderer, MonitorInfo monitor, CaptureMethod method)
     {
         if (method == CaptureMethod.GraphicsCapture && CaptureSupport.GraphicsCaptureAvailable)
@@ -331,7 +337,7 @@ internal static class SelfTest
 
         string? endReason = "not ended";
         var ended = new ManualResetEventSlim();
-        var options = new ScalingOptions { SourceDisplay = monitor.Id, Monitor = monitor.Id, Preview = true, PreviewWidth = 1280, PreviewHeight = 240, CaptureMethod = method };
+        var options = new ScalingOptions { SourceDisplay = monitor.Id, Monitor = monitor.Id, Preview = true, PreviewWidth = PreviewWidth(monitor), PreviewHeight = 240, CaptureMethod = method };
         var session = ScalingSession.Start(IntPtr.Zero, options, (_, reason) => { endReason = reason; ended.Set(); });
         Thread.Sleep(1500);
         check(session.CaptureMethod == method, $"display session by {name}: uses {CaptureSupport.Describe(session.CaptureMethod)}");
@@ -416,7 +422,7 @@ internal static class SelfTest
     private static void SessionTest(IntPtr hwnd, string outputDirectory, bool preview, Action<bool, string> check)
     {
         string name = preview ? "preview" : "overlay";
-        var options = new ScalingOptions { Preview = preview, PreviewWidth = 1280, PreviewHeight = 240, AutoCrop = true };
+        var options = new ScalingOptions { Preview = preview, PreviewWidth = PreviewWidth(MonitorInfo.FromWindow(hwnd)), PreviewHeight = 240, AutoCrop = true };
         string? endReason = "not ended";
         var ended = new ManualResetEventSlim();
         var session = ScalingSession.Start(hwnd, options, (_, reason) => { endReason = reason; ended.Set(); });

@@ -61,6 +61,16 @@ public class CaptureMethodTests
     public void RejectsAnUnknownCaptureMethod()
         => Assert.Throws<ArgumentException>(() => CommandLineOptions.Parse(["--capture", "bitblt"]));
 
+    [Theory]
+    [InlineData(2560, 1280)]
+    [InlineData(1920, 1280)]
+    [InlineData(640, 560)] // the cabinets' 640x480: a 1280-wide preview did not fit (Racecab1, 13/11)
+    public void FitsTheSelfTestPreviewOnTheDisplay(int displayWidth, int previewWidth)
+    {
+        var monitor = new SuperResScaler.Native.MonitorInfo(1, @"\\.\DISPLAY1", "PHL", "id", new SuperResScaler.Native.RECT(0, 0, displayWidth, 480), true, IntPtr.Zero);
+        Assert.Equal(previewWidth, SelfTest.PreviewWidth(monitor));
+    }
+
     [Fact]
     public void CopiesTheCaptureMethod()
     {
