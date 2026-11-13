@@ -26,7 +26,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 15 | 13/11 | Relancer l'écran virtuel arrêté (code 43) ; commit et push ; répondre à Image borne et lui demander d'essayer l'écran virtuel avec les jeux Raw Thrills | ⚠️ écran détruit puis recréé (UAC), actif ; demandes 12 à 14 commitées et poussées (`a2c6933`) ; version de test autonome ; message envoyé (réception non confirmée), essai à faire côté borne |
 | 16 | 13/11 | Pas la peine d'inclure .NET 10 dans l'archive, il sera installé sur le PC | ✅ archive de test refaite au format du 26/10 (exe dépendant de .NET + `Shaders/`), 7,1 Mo, auto-test complet ; l'archive autonome est supprimée |
 | 17 | 13/11 | Publier le correctif de l'auto-test pour la borne (aperçu trop large pour un écran de 640) | ⚠️ `26d22d7` poussé, archive `g26d22d7` sans .NET (7,1 Mo), auto-test complet ici ; message envoyé à Image borne, pas revérifié sur la borne |
-| 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; pas commité, pas essayé sur une borne |
+| 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; pas essayé sur une borne |
+| 19 | 13/11 | Publier la version .NET 8 pour la borne | ⚠️ `a4f623b` poussé, archive `ga4f623b` (7,4 Mo), auto-test complet ici sous .NET 8 ; Image borne prévenue de ne pas installer l'exe `26d22d7` (.NET 10), réception non confirmée |
 
 ## Releases
 
@@ -39,13 +40,15 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 26/10 | 0.2.1 | `2f76561` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,6 Mo | 100/100 tests, auto-test 25/25 |
 | 10/11 | 0.3.0 | `2230d17` | autonome (runtime embarqué), sur l'autre PC dans `emulateurs\releases` | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,7 Mo | 145/145 tests, auto-test 40/44 (demande 9) |
 | 12/11 | 0.3.0 | `58b34cb` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,2 Mo | 145/145 tests, auto-test 44/44 |
-| 13/11 | 0.3.0+26d22d7 (test) | `26d22d7` | dépend du .NET 10 Desktop Runtime, sur ce PC dans `emulateurs\releases` (`superres-scaler-0.3.0-20261113-g26d22d7-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,1 Mo | 195/195 tests ; auto-test complet sur une copie, en mode normal et en mode 1809 simulé |
+| 13/11 | 0.3.0+a4f623b (test) | `a4f623b` | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.3.0-20261113-ga4f623b-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test complet sur une copie sous .NET 8.0.34, en mode normal et en mode 1809 simulé |
 
-Le 13/11, cette version de test a connu trois archives :
+Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
-- une archive dépendante de .NET (`be4d81b`), faite après que .NET 10 a été prévu sur les bornes (demande 16) ;
-- celle-ci, qui ajoute la largeur d'aperçu de l'auto-test (demande 17).
-Les deux premières sont supprimées.
+- une archive dépendante de .NET 10 (`be4d81b`), faite quand .NET 10 était prévu sur les bornes (demande 16) ;
+- une archive dépendante de .NET 10 (`26d22d7`), avec la largeur d'aperçu de l'auto-test (demande 17) ;
+- celle-ci, en .NET 8, que les bornes ont déjà (demandes 18 et 19).
+Les trois premières sont supprimées. Un dossier extrait de l'archive `26d22d7` est resté dans `emulateurs\releases`,
+créé par une autre session à 09:39 : son exe vise .NET 10 et ne démarre pas sur une borne qui n'a que .NET 8.
 
 L'archive du 10/11 suit un autre nom (`superres-scaler-0.3.0-20261110-g2230d17-njz3-windows-x64.zip`, avec un
 dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer » : faux pour l'archive du 12/11.
