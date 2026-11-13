@@ -4,6 +4,7 @@ using SuperResScaler.App;
 using SuperResScaler.Config;
 using SuperResScaler.Native;
 using SuperResScaler.UI;
+using SuperResScaler.VirtualDisplay;
 
 namespace SuperResScaler;
 
@@ -41,6 +42,11 @@ internal static class Program
         if (store.LoadError != null)
             Log.Warn(store.LoadError);
 
+        if (cli.VirtualAdmin is var (adminAction, resultFile))
+            return VirtualDisplayManager.RunAdmin(adminAction, resultFile);
+        if (cli.VirtualAction != null)
+            return RunVirtualAction(cli);
+
         if (cli.SelfTestDirectory != null)
             return SelfTest.Run(cli.SelfTestDirectory, cli.SelfTestOverlay);
 
@@ -55,6 +61,31 @@ internal static class Program
 
         Application.Run(new MainForm(controller, cli.Tray || store.Settings.StartInTray));
         return 0;
+    }
+
+    /// <summary>--virtual-create, -destroy, -modes, -add, -remove: prints the result, 0 on success.</summary>
+    private static int RunVirtualAction(CommandLineOptions cli)
+    {
+        try
+        {
+            string text = cli.VirtualAction switch
+            {
+                "create" => VirtualDisplayManager.Create(),
+                "destroy" => VirtualDisplayManager.Destroy(),
+                "add" => VirtualDisplayManager.AddModes([cli.VirtualMode]),
+                "remove" => VirtualDisplayManager.RemoveMode(cli.VirtualMode),
+                _ => VirtualDisplayManager.DescribeModes(),
+            };
+            Log.Info($"Virtual display {cli.VirtualAction}: {text}");
+            ShowText(text, error: false);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Virtual display {cli.VirtualAction}: {ex.Message}");
+            ShowText(ex.Message, error: true);
+            return 1;
+        }
     }
 
     /// <summary>The display modes of one display (by its number) or of all of them, current mode marked.</summary>

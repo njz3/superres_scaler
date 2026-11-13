@@ -23,8 +23,10 @@ internal sealed class MainForm : Form
     private readonly FlowLayoutPanel _navBottom;
     private readonly Panel _content;
     private readonly HomePage _home;
+    private readonly VirtualDisplayPage _virtualDisplay;
     private readonly SettingsPage _settings;
     private readonly AboutPage _about;
+    private readonly VirtualDisplayThumbnail _thumbnail;
     private Page? _current;
     private bool _exiting;
     private bool _trayHintShown;
@@ -72,9 +74,12 @@ internal sealed class MainForm : Form
         Controls.Add(nav);
 
         _home = new HomePage(controller);
+        _virtualDisplay = new VirtualDisplayPage(controller);
         _settings = new SettingsPage(controller);
         _settings.WatchingSettingsChanged += UpdateWatching;
         _about = new AboutPage(controller);
+        _thumbnail = new VirtualDisplayThumbnail(this);
+        _thumbnail.Click += (_, _) => Navigate(_virtualDisplay, FindNavItem(_virtualDisplay));
 
         _trayWatch = new ToolStripMenuItem("Surveiller les profils", null, (_, _) => ToggleWatching()) { CheckOnClick = false };
         _trayStop = new ToolStripMenuItem("Arrêter la mise à l'échelle", null, (_, _) => _controller.StopScaling());
@@ -115,6 +120,7 @@ internal sealed class MainForm : Form
         _navBottom.Controls.Clear();
 
         AddNav(_navTop, new NavItem(Theme.GlyphHome, "Accueil") { Target = _home });
+        AddNav(_navTop, new NavItem(Theme.GlyphVirtualDisplay, "Écran virtuel") { Target = _virtualDisplay });
         _navTop.Controls.Add(new Label
         {
             Text = "Profils",
@@ -172,12 +178,14 @@ internal sealed class MainForm : Form
 
     private void Navigate(Page page, NavItem? item)
     {
+        _current?.SetCorner(null); // the thumbnail moves to the new page, it is not disposed with a profile page
         if (_current is ProfilePage old && old != page)
             old.Dispose();
         _content.SuspendLayout();
         _content.Controls.Clear();
         _content.AutoScrollPosition = Point.Empty;
         _content.Controls.Add(page);
+        page.SetCorner(_thumbnail);
         _content.ResumeLayout();
         _current = page;
         page.OnShown();
@@ -294,7 +302,10 @@ internal sealed class MainForm : Form
         base.OnVisibleChanged(e);
         UpdateWatching();
         if (Visible)
+        {
             _current?.OnShown();
+            _thumbnail.RefreshNow();
+        }
     }
 
     protected override void OnResize(EventArgs e)

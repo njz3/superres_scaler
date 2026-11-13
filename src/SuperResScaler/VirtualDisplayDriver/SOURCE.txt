@@ -1,0 +1,13 @@
+Virtual Display Driver 25.7.23 (driver 11.30.4.434), unchanged
+https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23
+File VirtualDisplayDriver-x86.Driver.Only.zip (x64 driver despite its name),
+SHA-256 E24210692B442B39AF763536330CE78B423F19342B7A7792C26DE3944E418B3A
+Signed by SignPath Foundation. MIT license: LICENSE.txt.
+
+SHA-256 of the files:
+  MttVDD.dll  C9CA837F57A98FBD43BC416A7F535A95843626E7759EAF85CF0CD7CE334DBB05
+  MttVDD.inf  550D211FE481E74DFE3F9D724ED78BE48B3A9113405965D683D9373E8D672F5D
+  mttvdd.cat  08A0093FC9B2E32B287A6F8A77CA4DE0A31830D29FC33D2B13A918DC859468F6
+
+Do not edit MttVDD.inf: mttvdd.cat signs its exact bytes. SuperResScaler writes the
+settings (modes) to C:\VirtualDisplayDriver\vdd_settings.xml, where the driver reads them.

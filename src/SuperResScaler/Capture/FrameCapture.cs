@@ -1,5 +1,6 @@
 // Copyright (c) Benjamin Maurin (njz3) 2026
 
+using System.Runtime.Versioning;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Windows.Foundation.Metadata;
@@ -10,38 +11,13 @@ using Windows.Graphics.DirectX.Direct3D11;
 
 namespace SuperResScaler.Capture;
 
-/// <summary>A captured frame. Its texture is only valid until the frame is disposed.</summary>
-internal sealed class CapturedFrame : IDisposable
-{
-    private readonly Direct3D11CaptureFrame _frame;
-
-    public CapturedFrame(Direct3D11CaptureFrame frame)
-    {
-        _frame = frame;
-        Texture = WinRTInterop.GetTexture(frame.Surface);
-        ContentWidth = frame.ContentSize.Width;
-        ContentHeight = frame.ContentSize.Height;
-    }
-
-    public ID3D11Texture2D Texture { get; }
-
-    /// <summary>Size of the window content inside the (possibly larger) texture.</summary>
-    public int ContentWidth { get; }
-    public int ContentHeight { get; }
-
-    public void Dispose()
-    {
-        Texture.Dispose();
-        _frame.Dispose();
-    }
-}
-
 /// <summary>
-/// Captures one window or one whole display with Windows.Graphics.Capture. Windows are captured
-/// even when occluded, and borderless "fullscreen" games work, but not minimized windows or
-/// exclusive fullscreen.
+/// Captures one window or one whole display with Windows.Graphics.Capture (Windows 10 1903 or later:
+/// CreateForWindow / CreateForMonitor). Windows are captured even when occluded, and borderless
+/// "fullscreen" games work, but not minimized windows or exclusive fullscreen.
 /// </summary>
-internal sealed class FrameCapture : IDisposable
+[SupportedOSPlatform("windows10.0.18362.0")]
+internal sealed class FrameCapture : IFrameSource
 {
     private const DirectXPixelFormat PixelFormat = DirectXPixelFormat.B8G8R8A8UIntNormalized;
     private const int BufferCount = 2;
@@ -75,27 +51,26 @@ internal sealed class FrameCapture : IDisposable
         // Free-threaded: frames are pulled from the render thread, no dispatcher needed.
         _framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(_device, PixelFormat, BufferCount, _poolSize);
         _session = _framePool.CreateCaptureSession(_item);
-        _session.IsCursorCaptureEnabled = captureCursor;
+        SetCursorCapture(captureCursor);
         DisableCaptureBorder(_session);
         _session.StartCapture();
 
-        Log.Info($"Capture started: item {_item.DisplayName} {_poolSize.Width}x{_poolSize.Height}");
+        Log.Info($"Capture started (Windows.Graphics.Capture): item {_item.DisplayName} {_poolSize.Width}x{_poolSize.Height}");
     }
 
-    /// <summary>True once the captured window has been destroyed, or the display removed.</summary>
+    public CaptureMethod Method => CaptureMethod.GraphicsCapture;
+
     public bool IsClosed => _closed;
 
     public void SetCursorCapture(bool enabled)
     {
+        // Windows 10 1903 and 1909 always capture the cursor: the switch came with 2004.
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            return;
         try { _session.IsCursorCaptureEnabled = enabled; }
         catch (Exception ex) { Log.Warn($"IsCursorCaptureEnabled: {ex.Message}"); }
     }
 
-    /// <summary>
-    /// Returns the most recent frame (older queued frames are dropped), or null when the
-    /// window content has not changed since the last call. The caller disposes the frame
-    /// before calling this method again.
-    /// </summary>
     public CapturedFrame? TryGetLatestFrame()
     {
         if (_pendingResize is SizeInt32 size)
@@ -118,13 +93,15 @@ internal sealed class FrameCapture : IDisposable
         if (contentSize.Width != _poolSize.Width || contentSize.Height != _poolSize.Height)
             _pendingResize = contentSize;
 
-        return new CapturedFrame(latest);
+        return new CapturedFrame(WinRTInterop.GetTexture(latest.Surface), contentSize.Width, contentSize.Height,
+            latest.SystemRelativeTime, latest.Dispose);
     }
 
     private static void DisableCaptureBorder(GraphicsCaptureSession session)
     {
         // Windows 11 lets us hide the yellow "being captured" border.
-        if (!ApiInformation.IsPropertyPresent(typeof(GraphicsCaptureSession).FullName, nameof(GraphicsCaptureSession.IsBorderRequired)))
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348)
+            || !ApiInformation.IsPropertyPresent(typeof(GraphicsCaptureSession).FullName, nameof(GraphicsCaptureSession.IsBorderRequired)))
             return;
         try
         {

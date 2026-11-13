@@ -321,6 +321,7 @@ internal static class User32
     public const uint DM_DISPLAYFLAGS = 0x00200000;
     public const uint DM_DISPLAYFREQUENCY = 0x00400000;
     public const uint DM_INTERLACED = 0x00000002;
+    public const uint CDS_UPDATEREGISTRY = 0x00000001;
     public const uint CDS_TEST = 0x00000002;
     public const uint CDS_FULLSCREEN = 0x00000004;
     public const int DISP_CHANGE_SUCCESSFUL = 0;
@@ -339,6 +340,32 @@ internal static class User32
     public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc callback,
         uint processId, uint threadId, uint flags);
     [DllImport(Dll)] public static extern bool UnhookWinEvent(IntPtr hook);
+
+    public const uint RDW_INVALIDATE = 0x0001;
+    public const uint RDW_ERASE = 0x0004;
+    public const uint RDW_ALLCHILDREN = 0x0080;
+    public const uint RDW_FRAME = 0x0400;
+
+    /// <summary>With a null window: the desktop and, with RDW_ALLCHILDREN, the windows over <paramref name="update"/> (screen pixels).</summary>
+    [DllImport(Dll)] public static extern bool RedrawWindow(IntPtr hWnd, ref RECT update, IntPtr region, uint flags);
+
+    /// <summary>With a null window: the whole desktop, all displays included.</summary>
+    [DllImport(Dll)] public static extern IntPtr GetDC(IntPtr hWnd);
+    [DllImport(Dll)] public static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
+}
+
+internal static class Gdi32
+{
+    private const string Dll = "gdi32.dll";
+
+    public const uint SRCCOPY = 0x00CC0020;
+    public const int HALFTONE = 4;
+
+    [DllImport(Dll, SetLastError = true)]
+    public static extern bool StretchBlt(IntPtr destination, int x, int y, int width, int height,
+        IntPtr source, int sourceX, int sourceY, int sourceWidth, int sourceHeight, uint rop);
+    [DllImport(Dll)] public static extern int SetStretchBltMode(IntPtr hdc, int mode);
+    [DllImport(Dll)] public static extern bool SetBrushOrgEx(IntPtr hdc, int x, int y, IntPtr previous);
 }
 
 internal static class Kernel32
@@ -388,6 +415,25 @@ internal static class Dwmapi
         if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf<RECT>()) == 0)
             return true;
         return User32.GetWindowRect(hwnd, out rect);
+    }
+
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWA_BORDER_COLOR = 34;
+    private const int DWMWCP_DONOTROUND = 1;
+    private const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    /// <summary>
+    /// Square corners and no border on Windows 11 (nothing changes before): both are drawn over the
+    /// edge of the client area, which a display capture would then see.
+    /// </summary>
+    public static void UsePlainFrame(IntPtr hwnd)
+    {
+        int corners = DWMWCP_DONOTROUND;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corners, sizeof(int));
+        int border = DWMWA_COLOR_NONE;
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, sizeof(int));
     }
 
     public static bool IsCloaked(IntPtr hwnd)

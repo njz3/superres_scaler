@@ -2,8 +2,10 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using SuperResScaler.Capture;
 using SuperResScaler.Config;
 using SuperResScaler.Native;
+using SuperResScaler.VirtualDisplay;
 
 namespace SuperResScaler.App;
 
@@ -48,12 +50,24 @@ internal sealed partial class CommandLineOptions
           --cursor                   capture le curseur
           --no-vsync                 désactive la synchro verticale
           --display <écran>          capture cet écran entier au lieu de la fenêtre (numéro vu
-                                     avec --list-modes, ou partie du nom du moniteur). Seul :
-                                     démarre aussitôt ; avec --process : s'arrête avec le jeu
+                                     avec --list-modes, partie du nom du moniteur, ou virtuel
+                                     pour l'écran virtuel). Seul : démarre aussitôt ; avec
+                                     --process : s'arrête avec le jeu
+          --capture auto|wgc|duplication  méthode de capture d'un écran entier : auto =
+                                     Windows.Graphics.Capture dès Windows 10 1903, sinon la
+                                     duplication de bureau (seule possible en 1809, sans curseur)
           --monitor <écran>          écran de sortie (même format, 0 = automatique)
           --resolution 1920x240@60   mode d'affichage pendant la mise à l'échelle (aussi
                                      1280x480i) ; la résolution d'origine revient à l'arrêt
           --preview [LxH]            fenêtre de prévisualisation au lieu du plein écran
+
+        Écran virtuel de test (pilote Virtual Display Driver, intégré à l'exe), pour essayer les
+        super-résolutions sans borne ; il se capture avec --display virtuel :
+          --virtual-create           crée l'écran virtuel (demande les droits d'administrateur)
+          --virtual-destroy          le détruit (idem) ; ses modes restent enregistrés
+          --virtual-modes            liste ses modes
+          --virtual-add <mode>       ajoute un mode : 1280x240@60, 1024x384@57.5...
+          --virtual-remove <mode>    retire un mode
 
         Diagnostic :
           --list-modes [n]           liste les modes d'affichage (de l'écran n, sinon de tous)
@@ -67,6 +81,15 @@ internal sealed partial class CommandLineOptions
     public bool SelfTestOverlay { get; private set; }
     public bool ListModes { get; private set; }
     public int ListModesMonitor { get; private set; }
+
+    /// <summary>--virtual-create, -destroy, -modes, -add, -remove: "create", "destroy", "modes", "add" or "remove".</summary>
+    public string? VirtualAction { get; private set; }
+
+    /// <summary>The mode of --virtual-add / --virtual-remove.</summary>
+    public VirtualMode VirtualMode { get; private set; }
+
+    /// <summary>The elevated helper's action and result file (hidden argument).</summary>
+    public (string Action, string ResultFile)? VirtualAdmin { get; private set; }
 
     public string? Process { get; private set; }
     public string? Title { get; private set; }
@@ -204,6 +227,19 @@ internal sealed partial class CommandLineOptions
                 case "--window": o._overrides.Add(s => s.ClientAreaOnly = false); break;
                 case "--cursor": o._overrides.Add(s => s.CaptureCursor = true); break;
                 case "--no-vsync": o._overrides.Add(s => s.VSync = false); break;
+                case "--capture":
+                {
+                    string v = Value().Trim().ToLowerInvariant();
+                    CaptureMethod method = v switch
+                    {
+                        "auto" => CaptureMethod.Auto,
+                        "wgc" or "graphicscapture" => CaptureMethod.GraphicsCapture,
+                        "duplication" or "dda" or "desktopduplication" => CaptureMethod.DesktopDuplication,
+                        _ => throw new ArgumentException($"Méthode de capture inconnue : {v} (auto, wgc ou duplication)"),
+                    };
+                    o._overrides.Add(s => s.CaptureMethod = method);
+                    break;
+                }
                 case "--monitor":
                 {
                     string v = Value().Trim();
@@ -224,6 +260,25 @@ internal sealed partial class CommandLineOptions
                     if (!ResolutionRequest.IsUnchanged(v) && !ResolutionRequest.TryParse(v, out _))
                         throw new ArgumentException($"Résolution invalide : {v} (ex. 1920x240, 1920x240@60, 1280x480i)");
                     o._overrides.Add(s => s.Resolution = v);
+                    break;
+                }
+                case "--virtual-create": o.SetVirtualAction(arg, "create"); break;
+                case "--virtual-destroy": o.SetVirtualAction(arg, "destroy"); break;
+                case "--virtual-modes": o.SetVirtualAction(arg, "modes"); break;
+                case "--virtual-add":
+                case "--virtual-remove":
+                {
+                    string v = Value();
+                    if (!VirtualMode.TryParse(v, out var mode))
+                        throw new ArgumentException($"Mode invalide pour {arg} : {v} (ex. 1280x240@60, 1024x384@57.5)");
+                    o.SetVirtualAction(arg, arg.EndsWith("add", StringComparison.OrdinalIgnoreCase) ? "add" : "remove");
+                    o.VirtualMode = mode;
+                    break;
+                }
+                case VirtualDisplayManager.AdminArgument:
+                {
+                    string action = Value();
+                    o.VirtualAdmin = (action, Value());
                     break;
                 }
                 case "--list-modes":
@@ -256,6 +311,13 @@ internal sealed partial class CommandLineOptions
             }
         }
         return o;
+    }
+
+    private void SetVirtualAction(string argument, string action)
+    {
+        if (VirtualAction != null)
+            throw new ArgumentException($"Une seule action d'écran virtuel à la fois ({argument})");
+        VirtualAction = action;
     }
 
     private static double ParseDouble(string name, string value)

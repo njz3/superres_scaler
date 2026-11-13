@@ -29,6 +29,7 @@ internal sealed class ScalingSession
     private readonly ConcurrentQueue<Action> _commands = new();
     private readonly ManualResetEventSlim _started = new();
     private readonly BlackBarDetector _blackBars = new();
+    private readonly CaptureStatistics _statistics = new();
     private readonly Action<ScalingSession, string?> _onEnded;
     private readonly Action<string>? _onMessage;
     private ScalingOptions _options;
@@ -39,7 +40,8 @@ internal sealed class ScalingSession
     private Renderer? _renderer;
     private OverlayWindow? _overlay;
     private SwapChainPresenter? _presenter;
-    private FrameCapture? _capture;
+    private IFrameSource? _capture;
+    private CaptureMethod _captureMethod;
     private DisplayModeChange? _displayChange;
     private string? _monitorDevice;
     private Rectangle _outputBounds;
@@ -62,6 +64,12 @@ internal sealed class ScalingSession
 
     /// <summary>The window the image is presented in.</summary>
     public IntPtr OutputWindow => _overlay?.Handle ?? IntPtr.Zero;
+
+    /// <summary>The capture method in use (Windows.Graphics.Capture or the desktop duplication).</summary>
+    public CaptureMethod CaptureMethod => _capture?.Method ?? _captureMethod;
+
+    /// <summary>The last capture statistics written to the log (every 10 s), null before.</summary>
+    public string? CaptureReport => _statistics.LastReport;
 
     /// <summary>Shader actually in use (may be the built-in fallback).</summary>
     public string? ActiveShader { get; private set; }
@@ -147,7 +155,12 @@ internal sealed class ScalingSession
         string what = _capturesDisplay ? $"display {FindSourceDisplay()}" : $"'{info!.Title}' ({info.ProcessName})";
         Log.Info($"Scaling {what}, shader {_options.Shader}, mode {_options.Mode}, preview {_options.Preview}");
 
-        _renderer = new Renderer();
+        var choice = CaptureSupport.Choose(_options.CaptureMethod, _capturesDisplay, CaptureSupport.GraphicsCaptureAvailable);
+        if (choice.Note != null)
+            _onMessage?.Invoke(choice.Note);
+        _captureMethod = choice.Method;
+
+        _renderer = CreateRenderer();
         _renderer.LoadShaderOrFallback(_options.Shader);
         ActiveShader = _renderer.ShaderName;
         if (ActiveShader == Renderer.FallbackShaderName)
@@ -161,19 +174,46 @@ internal sealed class ScalingSession
         _overlay = new OverlayWindow(_outputBounds, _options.Preview);
         _presenter = new SwapChainPresenter(_renderer, _overlay.Handle, _outputBounds.Width, _outputBounds.Height);
         _capture = CreateCapture();
-        Log.Info($"Output {_outputBounds}");
+        Log.Info($"Output {_outputBounds}, capture by {CaptureSupport.Describe(_capture.Method)}");
     }
 
-    private FrameCapture CreateCapture()
+    /// <summary>The desktop duplication needs a device on the graphics card of the captured display.</summary>
+    private Renderer CreateRenderer()
+    {
+        if (_captureMethod != CaptureMethod.DesktopDuplication)
+            return new Renderer();
+        using var adapter = DuplicationCapture.FindAdapter(FindSourceDisplay().DeviceName);
+        return new Renderer(adapter);
+    }
+
+    private IFrameSource CreateCapture()
     {
         if (!_capturesDisplay)
+        {
+            if (!CaptureSupport.GraphicsCaptureAvailable)
+                throw new NotSupportedException("Capture d'une fenêtre impossible avant Windows 10 1903");
             return FrameCapture.ForWindow(_renderer!.Device, _window, _options.CaptureCursor);
+        }
 
         // Looked up again: a display's handle does not survive the mode change made above.
         var display = FindSourceDisplay();
         if (display.DeviceName == _monitorDevice && !_overlay!.ExcludeFromCapture())
             _onMessage?.Invoke("L'image capturée contiendra sa propre sortie : choisissez un autre écran de sortie");
-        return FrameCapture.ForMonitor(_renderer!.Device, display.Handle, _options.CaptureCursor);
+        if (_captureMethod == CaptureMethod.GraphicsCapture && CaptureSupport.GraphicsCaptureAvailable)
+        {
+            try
+            {
+                return FrameCapture.ForMonitor(_renderer!.Device, display.Handle, _options.CaptureCursor);
+            }
+            catch (Exception ex) when (_options.CaptureMethod == CaptureMethod.Auto)
+            {
+                Log.Warn($"Windows.Graphics.Capture unavailable for {display.DeviceName}, trying the desktop duplication: {ex.Message}");
+                _captureMethod = CaptureMethod.DesktopDuplication;
+            }
+        }
+        if (_options.CaptureCursor)
+            _onMessage?.Invoke("La duplication de bureau ne capture pas le curseur");
+        return new DuplicationCapture(_renderer!.Device, _options.SourceDisplay);
     }
 
     private MonitorInfo FindSourceDisplay()
@@ -188,6 +228,7 @@ internal sealed class ScalingSession
         var capture = _capture!;
         bool hasImage = false;
         long iteration = 0;
+        int presentFailures = 0;
 
         while (!_stopRequested)
         {
@@ -220,13 +261,41 @@ internal sealed class ScalingSession
 
             using (var frame = capture.TryGetLatestFrame())
             {
-                if (frame != null && UpdateSource(frame))
-                    hasImage = true;
+                if (frame != null)
+                {
+                    _statistics.Add(CaptureStatistics.Now() - frame.ComposedAt);
+                    if (UpdateSource(frame))
+                        hasImage = true;
+                }
             }
+            if (_statistics.TryReport(System.Diagnostics.Stopwatch.GetTimestamp()) is { } report)
+                Log.Info(report);
 
             var placement = Geometry.ComputePlacement(_options, renderer.CapturedWidth, renderer.CapturedHeight, presenter.Width, presenter.Height);
             renderer.Draw(presenter.RenderTarget, placement);
-            presenter.Present(_options.VSync);
+            try
+            {
+                presenter.Present(_options.VSync);
+                presentFailures = 0;
+            }
+            catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode == Vortice.DXGI.ResultCode.DeviceRemoved
+                                                                || ex.ResultCode == Vortice.DXGI.ResultCode.DeviceReset)
+            {
+                // With two graphics cards, rendering on the captured display's one (desktop
+                // duplication) and showing on the other's display, a change of the displays (the
+                // virtual display reloading its modes...) breaks the presentation between the cards
+                // while the device itself is fine: the swap chain is created again.
+                var removed = renderer.Device.DeviceRemovedReason;
+                if (removed.Failure || ++presentFailures > 3)
+                {
+                    Log.Warn($"Present failed ({ex.ResultCode.Code:X8}), device removed: {removed.Code:X8}");
+                    return "La carte graphique a été réinitialisée : relancez la mise à l'échelle";
+                }
+                Log.Warn($"Present failed ({ex.ResultCode.Code:X8}), swap chain created again");
+                renderer.Context.ClearState();
+                presenter.Dispose();
+                presenter = _presenter = new SwapChainPresenter(renderer, overlay.Handle, _outputBounds.Width, _outputBounds.Height);
+            }
 
             if (hasImage && !overlay.IsVisible)
                 overlay.Show();

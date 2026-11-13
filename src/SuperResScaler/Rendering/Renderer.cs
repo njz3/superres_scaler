@@ -99,13 +99,22 @@ internal sealed class Renderer : IDisposable
     private long _croppedVersion = -1;
     private uint _frameCount;
 
-    public Renderer()
+    /// <param name="adapter">
+    /// The graphics card to render with, null for the default one. The desktop duplication needs the
+    /// card of the captured display.
+    /// </param>
+    public Renderer(IDXGIAdapter? adapter = null)
     {
         FeatureLevel[] levels = [FeatureLevel.Level_11_1, FeatureLevel.Level_11_0, FeatureLevel.Level_10_1, FeatureLevel.Level_10_0];
         const DeviceCreationFlags flags = DeviceCreationFlags.BgraSupport;
 
-        Result result = D3D11.D3D11CreateDevice(null, DriverType.Hardware, flags, levels,
+        Result result = D3D11.D3D11CreateDevice(adapter, adapter != null ? DriverType.Unknown : DriverType.Hardware, flags, levels,
             out ID3D11Device? device, out FeatureLevel level, out ID3D11DeviceContext? context);
+        if (result.Failure && adapter != null)
+        {
+            Log.Warn($"D3D11 device on {adapter.Description.Description} unavailable ({result}), using the default graphics card");
+            result = D3D11.D3D11CreateDevice(null, DriverType.Hardware, flags, levels, out device, out level, out context);
+        }
         if (result.Failure)
         {
             Log.Warn($"Hardware D3D11 device unavailable ({result}), using WARP");
@@ -121,9 +130,9 @@ internal sealed class Renderer : IDisposable
 
         using (var dxgiDevice = Device.QueryInterface<IDXGIDevice>())
         {
-            dxgiDevice.GetAdapter(out IDXGIAdapter adapter).CheckError();
-            using (adapter)
-                Log.Info($"D3D11 device: {adapter.Description.Description}, feature level {level}");
+            dxgiDevice.GetAdapter(out IDXGIAdapter used).CheckError();
+            using (used)
+                Log.Info($"D3D11 device: {used.Description.Description}, feature level {level}");
         }
 
         _vertexShader = Device.CreateVertexShader(Compile(VertexShaderSource, "FullscreenTriangle", "vs" + _profileSuffix));

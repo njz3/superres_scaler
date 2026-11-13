@@ -1,0 +1,2 @@
+# Signed driver files: their catalog covers the exact bytes, line endings included.
+src/SuperResScaler/VirtualDisplayDriver/** -text

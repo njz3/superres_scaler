@@ -1,6 +1,7 @@
 // Copyright (c) Benjamin Maurin (njz3) 2026
 
 using SuperResScaler.App;
+using SuperResScaler.Capture;
 using SuperResScaler.Config;
 using SuperResScaler.Engine;
 using SuperResScaler.Native;
@@ -17,6 +18,7 @@ internal sealed class ProfilePage : Page
 {
     private sealed record ModeItem(ScaleMode Mode, string Label) { public override string ToString() => Label; }
     private sealed record MonitorItem(string Id, string Label) { public override string ToString() => Label; }
+    private sealed record CaptureItem(CaptureMethod Method, string Label) { public override string ToString() => Label; }
 
     private const string UnchangedResolution = "(inchangée)";
 
@@ -54,6 +56,7 @@ internal sealed class ProfilePage : Page
     private readonly NumericUpDown _cropBottom = UiFactory.Number(0, 4000, 66);
     private readonly ToggleSwitch _autoCrop = new();
     private readonly ToggleSwitch _cursor = new();
+    private readonly ComboBox _captureMethod = UiFactory.DropDown(330);
     private readonly ToggleSwitch _vsync = new();
     private readonly ToggleSwitch _preview = new();
     private readonly NumericUpDown _previewWidth = UiFactory.Number(64, 7680, 76);
@@ -106,7 +109,11 @@ internal sealed class ProfilePage : Page
         AddCard(Theme.GlyphCrop, "Recadrage manuel", "Pixels retirés de chaque côté",
             UiFactory.Text("G"), _cropLeft, UiFactory.Text("H"), _cropTop, UiFactory.Text("D"), _cropRight, UiFactory.Text("B"), _cropBottom);
         AddCard(Theme.GlyphCrop, "Recadrage automatique des bandes noires", "Retire les bandes d'un jeu 4:3 centré dans une fenêtre plus large", _autoCrop);
-        AddCard(Theme.GlyphMouse, "Capturer le curseur", null, _cursor);
+        AddCard(Theme.GlyphMouse, "Capturer le curseur", "Pas avec la duplication de bureau", _cursor);
+        AddCard(Theme.GlyphSync, "Méthode de capture d'un écran",
+            "Auto : Windows.Graphics.Capture dès Windows 10 1903, sinon la duplication de bureau (seule possible en 1809, écran entier). "
+            + "Une fenêtre est toujours capturée par Windows.Graphics.Capture",
+            _captureMethod);
 
         AddSection("Avancé");
         AddCard(Theme.GlyphSync, "VSync", "Désactivée : latence minimale, déchirement possible", _vsync);
@@ -137,6 +144,13 @@ internal sealed class ProfilePage : Page
     {
         _mode.Items.AddRange([new ModeItem(ScaleMode.Stretch, "Plein écran étiré"), new ModeItem(ScaleMode.KeepAspect, "Plein écran au ratio (bandes noires)")]);
         _shader.Items.AddRange(ShaderLibrary.List().ToArray<object>());
+        bool graphicsCapture = CaptureSupport.GraphicsCaptureAvailable;
+        _captureMethod.Items.AddRange(
+        [
+            new CaptureItem(CaptureMethod.Auto, $"Auto (ici : {CaptureSupport.Describe(graphicsCapture ? CaptureMethod.GraphicsCapture : CaptureMethod.DesktopDuplication)})"),
+            new CaptureItem(CaptureMethod.GraphicsCapture, "Windows.Graphics.Capture" + (graphicsCapture ? "" : " (indisponible ici)")),
+            new CaptureItem(CaptureMethod.DesktopDuplication, "Duplication de bureau"),
+        ]);
         _placementWindow.DropDownWidth = _monitor.DropDownWidth = _sourceDisplay.DropDownWidth = Theme.S(520);
     }
 
@@ -161,7 +175,7 @@ internal sealed class ProfilePage : Page
     {
         foreach (var text in new Control[] { _name, _process, _title, _aspect, _displayAspect, _resolution })
             text.TextChanged += (_, _) => Changed();
-        foreach (var combo in new[] { _shader, _mode, _monitor, _sourceDisplay })
+        foreach (var combo in new[] { _shader, _mode, _monitor, _sourceDisplay, _captureMethod })
             combo.SelectedIndexChanged += (_, _) => Changed();
         foreach (var toggle in new[] { _autoScale, _barrel, _mirrorX, _mirrorY, _clientArea, _autoCrop, _cursor, _vsync, _preview })
             toggle.CheckedChanged += (_, _) => Changed();
@@ -207,6 +221,8 @@ internal sealed class ProfilePage : Page
         _cropBottom.Value = Math.Clamp(o.CropBottom, 0, 4000);
         _autoCrop.Checked = o.AutoCrop;
         _cursor.Checked = o.CaptureCursor;
+        _captureMethod.SelectedItem = _captureMethod.Items.Cast<CaptureItem>().FirstOrDefault(c => c.Method == o.CaptureMethod)
+                                      ?? _captureMethod.Items[0];
         _vsync.Checked = o.VSync;
         _preview.Checked = o.Preview;
         _previewWidth.Value = Math.Clamp(o.PreviewWidth, 64, 7680);
@@ -262,6 +278,7 @@ internal sealed class ProfilePage : Page
         o.CropBottom = (int)_cropBottom.Value;
         o.AutoCrop = _autoCrop.Checked;
         o.CaptureCursor = _cursor.Checked;
+        o.CaptureMethod = (_captureMethod.SelectedItem as CaptureItem)?.Method ?? o.CaptureMethod;
         o.VSync = _vsync.Checked;
         o.Preview = _preview.Checked;
         o.PreviewWidth = (int)_previewWidth.Value;

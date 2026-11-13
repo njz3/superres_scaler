@@ -42,6 +42,7 @@ internal static class Theme
     public static readonly Font SmallIcon = new(IconFamily, 10f);
 
     // Segoe MDL2 Assets / Segoe Fluent Icons code points.
+    public const string GlyphVirtualDisplay = "";
     public const string GlyphMirror = "";
     public const string GlyphHome = "";
     public const string GlyphSettings = "";

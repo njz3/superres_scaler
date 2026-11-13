@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SuperResScaler.Capture;
 using SuperResScaler.Native;
 using SuperResScaler.Rendering;
 
@@ -71,6 +72,12 @@ public class ScalingOptions
 
     public bool CaptureCursor { get; set; }
 
+    /// <summary>
+    /// Auto: Windows.Graphics.Capture from Windows 10 1903, the desktop duplication before (whole
+    /// display only, e.g. the cabinets' 1809). A window is always captured by Windows.Graphics.Capture.
+    /// </summary>
+    public CaptureMethod CaptureMethod { get; set; } = CaptureMethod.Auto;
+
     public bool VSync { get; set; } = true;
 
     /// <summary>
@@ -121,6 +128,7 @@ public class ScalingOptions
         CropBottom = other.CropBottom;
         AutoCrop = other.AutoCrop;
         CaptureCursor = other.CaptureCursor;
+        CaptureMethod = other.CaptureMethod;
         VSync = other.VSync;
         SourceDisplay = other.SourceDisplay;
         Monitor = other.Monitor;

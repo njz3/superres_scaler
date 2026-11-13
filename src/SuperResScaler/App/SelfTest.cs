@@ -11,8 +11,9 @@ namespace SuperResScaler.App;
 
 /// <summary>
 /// End-to-end check without a game: shows a test pattern window, captures it with
-/// Windows.Graphics.Capture, renders it with every shader at 1920x240 and verifies the pixels.
-/// Writes PNG files and selftest.txt into the output folder.
+/// Windows.Graphics.Capture (or, on Windows 10 1809, cuts it out of its display captured by
+/// duplication), renders it with every shader at 1920x240 and verifies the pixels. Whole-display
+/// capture is checked with each method this Windows has. Writes PNG files and selftest.txt.
 /// </summary>
 internal static class SelfTest
 {
@@ -31,9 +32,17 @@ internal static class SelfTest
                 failures++;
         }
 
-        using var form = new TestPatternForm();
+        // Windows 10 1809 (the cabinets) has no Windows.Graphics.Capture: only whole displays, by
+        // duplication. The pattern is then cut out of its display: without a frame, since Windows 11
+        // (SUPERRESSCALER_NO_WGC) draws the window's border over the edge of the client area.
+        bool graphicsCapture = CaptureSupport.GraphicsCaptureAvailable;
+        using var form = new TestPatternForm(framed: graphicsCapture);
         form.Show();
         Application.DoEvents();
+
+        report.Add($"INFO  Windows {Environment.OSVersion.Version}, capture of a window: "
+                   + (graphicsCapture ? "Windows.Graphics.Capture" : $"none (Windows.Graphics.Capture needs build {CaptureSupport.GraphicsCaptureBuild})")
+                   + ", of a display: " + (graphicsCapture ? "Windows.Graphics.Capture and desktop duplication" : "desktop duplication"));
 
         Exception? error = null;
         IntPtr hwnd = form.Handle;
@@ -43,10 +52,20 @@ internal static class SelfTest
             {
                 DisplayModeTests(Check);
                 RenderTests(hwnd, outputDirectory, Check);
-                DisplayCaptureTests(hwnd, outputDirectory, Check);
-                SessionTest(hwnd, outputDirectory, preview: true, Check);
-                if (includeOverlay)
-                    SessionTest(hwnd, outputDirectory, preview: false, Check);
+                if (graphicsCapture)
+                    DisplayCaptureTests(hwnd, outputDirectory, CaptureMethod.GraphicsCapture, Check);
+                DisplayCaptureTests(hwnd, outputDirectory, CaptureMethod.DesktopDuplication, Check);
+                if (graphicsCapture)
+                {
+                    SessionTest(hwnd, outputDirectory, preview: true, Check);
+                    if (includeOverlay)
+                        SessionTest(hwnd, outputDirectory, preview: false, Check);
+                }
+                else
+                {
+                    lock (report)
+                        report.Add("SKIP  window sessions: a window cannot be captured on this Windows");
+                }
             }
             catch (Exception ex)
             {
@@ -104,22 +123,61 @@ internal static class SelfTest
         }
     }
 
+    /// <summary>
+    /// The test window's client area: captured as a window (Windows.Graphics.Capture), or cut out of
+    /// the capture of its whole display by duplication when this Windows cannot capture a window.
+    /// </summary>
+    private static (Renderer Renderer, IFrameSource Capture) OpenPatternCapture(IntPtr hwnd)
+    {
+        if (CaptureSupport.GraphicsCaptureAvailable)
+        {
+            var renderer = new Renderer();
+            return (renderer, FrameCapture.ForWindow(renderer.Device, hwnd, captureCursor: false));
+        }
+        var monitor = MonitorInfo.FromWindow(hwnd);
+        using var adapter = DuplicationCapture.FindAdapter(monitor.DeviceName);
+        var duplicationRenderer = new Renderer(adapter);
+        return (duplicationRenderer, new DuplicationCapture(duplicationRenderer.Device, monitor.Id));
+    }
+
+    /// <summary>The test window's client area in a capture of its whole display.</summary>
+    private static Rectangle PatternInDisplay(IntPtr hwnd, out MonitorInfo monitor)
+    {
+        monitor = MonitorInfo.FromWindow(hwnd);
+        var origin = new POINT();
+        User32.ClientToScreen(hwnd, ref origin);
+        return new Rectangle(origin.X - monitor.Bounds.Left, origin.Y - monitor.Bounds.Top, TestPatternForm.ClientWidth, TestPatternForm.ClientHeight);
+    }
+
     private static void RenderTests(IntPtr hwnd, string outputDirectory, Action<bool, string> check)
     {
-        using var renderer = new Renderer();
-        using var capture = FrameCapture.ForWindow(renderer.Device, hwnd, captureCursor: false);
+        var (renderer, capture) = OpenPatternCapture(hwnd);
+        using var ownedRenderer = renderer;
+        using var ownedCapture = capture;
         using var frame = WaitForFrame(capture);
-        check(frame != null, "Windows.Graphics.Capture delivers a frame of the test window");
+        string method = CaptureSupport.Describe(capture.Method);
+        check(frame != null, $"{method} delivers a frame of the test window");
         if (frame == null)
             return;
 
-        using (var raw = Renderer.ToBitmap(renderer.ReadPixels(frame.Texture, 0, 0, frame.ContentWidth, frame.ContentHeight), frame.ContentWidth, frame.ContentHeight))
-            raw.Save(Path.Combine(outputDirectory, "capture_raw.png"));
-
-        var options = new ScalingOptions();
-        Rectangle region = Geometry.ComputeSourceRegion(hwnd, options, frame.ContentWidth, frame.ContentHeight);
-        check(region.Size == new Size(TestPatternForm.ClientWidth, TestPatternForm.ClientHeight),
-            $"client area located in the capture: {region} (window captured as {frame.ContentWidth}x{frame.ContentHeight})");
+        Rectangle region;
+        if (capture.Method == CaptureMethod.GraphicsCapture)
+        {
+            using (var raw = Renderer.ToBitmap(renderer.ReadPixels(frame.Texture, 0, 0, frame.ContentWidth, frame.ContentHeight), frame.ContentWidth, frame.ContentHeight))
+                raw.Save(Path.Combine(outputDirectory, "capture_raw.png"));
+            region = Geometry.ComputeSourceRegion(hwnd, new ScalingOptions(), frame.ContentWidth, frame.ContentHeight);
+            check(region.Size == new Size(TestPatternForm.ClientWidth, TestPatternForm.ClientHeight),
+                $"client area located in the capture: {region} (window captured as {frame.ContentWidth}x{frame.ContentHeight})");
+        }
+        else
+        {
+            // Only the test window is saved: the rest of the display is the user's screen.
+            region = PatternInDisplay(hwnd, out _);
+            using (var raw = Renderer.ToBitmap(renderer.ReadPixels(frame.Texture, region.X, region.Y, region.Width, region.Height), region.Width, region.Height))
+                raw.Save(Path.Combine(outputDirectory, "capture_raw.png"));
+            check(new Rectangle(0, 0, frame.ContentWidth, frame.ContentHeight).Contains(region),
+                $"client area located in the capture of its display: {region} (display captured as {frame.ContentWidth}x{frame.ContentHeight})");
+        }
 
         var detector = new BlackBarDetector();
         detector.Analyze(renderer.ReadPixels(frame.Texture, region.X, region.Y, region.Width, region.Height), region.Width, region.Height);
@@ -236,57 +294,70 @@ internal static class SelfTest
     /// real session whose output lies on that same display. Only the pattern's rectangle is ever
     /// saved: the rest of the capture is the user's screen.
     /// </summary>
-    private static void DisplayCaptureTests(IntPtr hwnd, string outputDirectory, Action<bool, string> check)
+    private static IFrameSource OpenDisplayCapture(Renderer renderer, MonitorInfo monitor, CaptureMethod method)
     {
+        if (method == CaptureMethod.GraphicsCapture && CaptureSupport.GraphicsCaptureAvailable)
+            return FrameCapture.ForMonitor(renderer.Device, monitor.Handle, captureCursor: false);
+        return new DuplicationCapture(renderer.Device, monitor.Id);
+    }
+
+    private static void DisplayCaptureTests(IntPtr hwnd, string outputDirectory, CaptureMethod method, Action<bool, string> check)
+    {
+        string name = CaptureSupport.Describe(method);
+        string suffix = method == CaptureMethod.GraphicsCapture ? "wgc" : "duplication";
         var monitors = MonitorInfo.GetAll();
         check(monitors.Count > 0 && monitors.All(m => m.Number > 0 && m.Id.Length > 0) && monitors.Select(m => m.Id).Distinct().Count() == monitors.Count,
             $"{monitors.Count} display(s) with distinct ids, numbers {string.Join(", ", monitors.Select(m => m.Number))}");
 
-        MonitorInfo monitor = MonitorInfo.FromWindow(hwnd);
+        Rectangle client = PatternInDisplay(hwnd, out MonitorInfo monitor);
         RECT bounds = monitor.Bounds;
-        var origin = new POINT();
-        User32.ClientToScreen(hwnd, ref origin);
-        var pattern = new Rectangle(origin.X - bounds.Left + TestPatternForm.ContentX, origin.Y - bounds.Top, TestPatternForm.ContentWidth, TestPatternForm.ClientHeight);
+        var pattern = new Rectangle(client.X + TestPatternForm.ContentX, client.Y, TestPatternForm.ContentWidth, TestPatternForm.ClientHeight);
 
-        using var renderer = new Renderer();
+        using var adapter = method == CaptureMethod.DesktopDuplication ? DuplicationCapture.FindAdapter(monitor.DeviceName) : null;
+        using var renderer = new Renderer(adapter);
         renderer.LoadShader(ShaderLibrary.DefaultShader);
-        using (var capture = FrameCapture.ForMonitor(renderer.Device, monitor.Handle, captureCursor: false))
+        using (var capture = OpenDisplayCapture(renderer, monitor, method))
         using (var frame = WaitForFrame(capture))
         {
             check(frame != null && frame.ContentWidth == bounds.Width && frame.ContentHeight == bounds.Height,
-                $"display capture delivers the whole display, {bounds.Width}x{bounds.Height} (got {frame?.ContentWidth}x{frame?.ContentHeight})");
+                $"display capture by {name} delivers the whole display, {bounds.Width}x{bounds.Height} (got {frame?.ContentWidth}x{frame?.ContentHeight})");
             if (frame == null)
                 return;
             renderer.UpdateSource(frame.Texture, pattern.X, pattern.Y, pattern.Width, pattern.Height);
             using var output = renderer.RenderToBitmap(1280, 240, Fill(pattern, 1280, 240));
-            output.Save(Path.Combine(outputDirectory, "display_capture_pattern_1280x240.png"));
-            check(VerifyPattern(output, new Rectangle(0, 0, 1280, 240), out string detail), $"display capture: pattern found at {pattern.Location} {detail}");
+            output.Save(Path.Combine(outputDirectory, $"display_capture_{suffix}_pattern_1280x240.png"));
+            check(VerifyPattern(output, new Rectangle(0, 0, 1280, 240), out string detail), $"display capture by {name}: pattern found at {pattern.Location} {detail}");
         }
 
         string? endReason = "not ended";
         var ended = new ManualResetEventSlim();
-        var options = new ScalingOptions { SourceDisplay = monitor.Id, Monitor = monitor.Id, Preview = true, PreviewWidth = 1280, PreviewHeight = 240 };
+        var options = new ScalingOptions { SourceDisplay = monitor.Id, Monitor = monitor.Id, Preview = true, PreviewWidth = 1280, PreviewHeight = 240, CaptureMethod = method };
         var session = ScalingSession.Start(IntPtr.Zero, options, (_, reason) => { endReason = reason; ended.Set(); });
         Thread.Sleep(1500);
+        check(session.CaptureMethod == method, $"display session by {name}: uses {CaptureSupport.Describe(session.CaptureMethod)}");
 
-        // The output covers part of the pattern on screen: seen in the capture, it would feed back on itself.
-        using (var capture = FrameCapture.ForMonitor(renderer.Device, monitor.Handle, captureCursor: false))
-        using (var frame = WaitForFrame(capture))
+        // The output covers part of the pattern on screen: seen in the capture, it would feed back on
+        // itself. Windows hides it from captures from Windows 10 2004 (WDA_EXCLUDEFROMCAPTURE). Only
+        // checked with Windows.Graphics.Capture: a process cannot duplicate a display twice at once.
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) && method == CaptureMethod.GraphicsCapture)
         {
+            using var checkRenderer = new Renderer(adapter);
+            using var capture = OpenDisplayCapture(checkRenderer, monitor, method);
+            using var frame = WaitForFrame(capture);
             string detail = "no frame";
             bool clean = false;
             if (frame != null)
             {
-                using var seen = Renderer.ToBitmap(renderer.ReadPixels(frame.Texture, pattern.X, pattern.Y, pattern.Width, pattern.Height), pattern.Width, pattern.Height);
+                using var seen = Renderer.ToBitmap(checkRenderer.ReadPixels(frame.Texture, pattern.X, pattern.Y, pattern.Width, pattern.Height), pattern.Width, pattern.Height);
                 clean = VerifyPattern(seen, new Rectangle(Point.Empty, pattern.Size), out detail);
             }
-            check(clean, $"display session: its output on the captured display stays out of the capture {detail}");
+            check(clean, $"display session by {name}: its output on the captured display stays out of the capture {detail}");
         }
 
         // A few single pixels of the output, where the bars land once the whole display is shrunk to
         // 1280x240. Reading the screen does not see a window excluded from capture, so the exclusion
         // ends here: the output and its drop shadow enter the capture, hence bars sampled well below them.
-        check(User32.SetWindowDisplayAffinity(session.OutputWindow, User32.WDA_NONE), "display session: output window made readable for this test");
+        check(User32.SetWindowDisplayAffinity(session.OutputWindow, User32.WDA_NONE), $"display session by {name}: output window made readable for this test");
         Thread.Sleep(300);
         Rectangle screen = session.OutputBounds;
         var wrong = new List<string>();
@@ -300,12 +371,12 @@ internal static class SelfTest
             if (!Near(pixel.GetPixel(0, 0), TestPatternForm.Bars[i]))
                 wrong.Add($"bar {i} at ({x},{y}) = {Describe(pixel.GetPixel(0, 0))}");
         }
-        check(wrong.Count == 0, $"display session: the display is shown scaled at {screen} {(wrong.Count == 0 ? "OK" : string.Join("; ", wrong))}");
+        check(wrong.Count == 0, $"display session by {name}: the display is shown scaled at {screen} {(wrong.Count == 0 ? "OK" : string.Join("; ", wrong))}");
 
         var stopwatch = Stopwatch.StartNew();
         session.Stop();
         ended.Wait(3000);
-        check(ended.IsSet && endReason == null, $"display session stops cleanly in {stopwatch.ElapsedMilliseconds} ms (reason: {endReason ?? "none"})");
+        check(ended.IsSet && endReason == null, $"display session by {name} stops cleanly in {stopwatch.ElapsedMilliseconds} ms (reason: {endReason ?? "none"})");
     }
 
     private static int CountDifferentPixels(Bitmap a, Bitmap b)
@@ -367,7 +438,7 @@ internal static class SelfTest
         check(ended.IsSet && endReason == null, $"{name} session stops cleanly in {stopwatch.ElapsedMilliseconds} ms (reason: {endReason ?? "none"})");
     }
 
-    private static CapturedFrame? WaitForFrame(FrameCapture capture)
+    private static CapturedFrame? WaitForFrame(IFrameSource capture)
     {
         var timeout = Stopwatch.StartNew();
         while (timeout.Elapsed < TimeSpan.FromSeconds(5))
@@ -435,16 +506,18 @@ internal static class SelfTest
             Color.FromArgb(255, 0, 255), Color.FromArgb(255, 0, 0), Color.FromArgb(0, 0, 255), Color.FromArgb(128, 128, 128),
         ];
 
-        public TestPatternForm()
+        /// <param name="framed">With a title bar, to check that a window capture finds the client area.</param>
+        public TestPatternForm(bool framed)
         {
             Text = "SuperResScaler — mire de test";
             AutoScaleMode = AutoScaleMode.None;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
+            FormBorderStyle = framed ? FormBorderStyle.FixedSingle : FormBorderStyle.None;
             MaximizeBox = false;
             ShowInTaskbar = false;
             TopMost = true; // a display capture sees what is really on screen
             StartPosition = FormStartPosition.Manual;
-            Location = new Point(200, 200);
+            // Without a frame, the client area where the framed one has it: away from the output's shadow.
+            Location = framed ? new Point(200, 200) : new Point(201, 231);
             ClientSize = new Size(ClientWidth, ClientHeight);
             BackColor = Color.Black;
             DoubleBuffered = true;
@@ -453,6 +526,13 @@ internal static class SelfTest
         public static Color LineColour(int row) => row % 2 == 0 ? Color.FromArgb(255, 255, 255) : Color.FromArgb(255, 0, 0);
 
         protected override bool ShowWithoutActivation => true;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Windows 11's rounded corners and border would be seen at the edge of a display capture.
+            Dwmapi.UsePlainFrame(Handle);
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {

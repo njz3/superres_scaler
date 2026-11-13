@@ -20,6 +20,9 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 9 | 10/11 | Faire une release | ⚠️ 0.3.0 (`2230d17` + numéro de version), 145 tests OK ; auto-test 40/44 : les 4 contrôles qui lisent l'écran voient une image assombrie (×0,55), cause non identifiée, le même code passait 44/44 peu avant |
 | 10 | 12/11 | Refaire l'archive 0.3.0 au format du 26/10 (exe dépendant de .NET + `Shaders/`, sans PDB) | ✅ `58b34cb`, 7,2 Mo, 145 tests, auto-test 44/44 ; l'archive autonome du 10/11 est laissée en place |
 | 11 | 12/11 | Y a-t-il des choses à commiter localement ? | ✅ rien : arbre propre, `main` = `origin/main` |
+| 12 | 13/11 | Écran virtuel dans SuperResScaler : créer, détruire, ajouter des modes, le capturer et l'afficher sur un autre écran avec shader, ratio… ; pilote embarqué dans l'exe | ⚠️ fait : 168 tests ; sur ce PC, créer/détruire (UAC), ajout/retrait de modes à chaud, capture suivant 640x480 → 1280x240 → 1024x384 ; pas essayé sur une borne |
+| 13 | 13/11 | Vignette de l'écran virtuel en haut à droite, rafraîchie toutes les 0,5 s ; coût et retard de la capture ; un jeu TeknoParrot en 1920x1080 sur l'écran virtuel, affiché en 1280x240 sur le CRT ? | ⚠️ vignette faite et mesurée sur ce PC (177 tests), statistiques de capture dans le journal ; jeu TeknoParrot pas essayé |
+| 14 | 13/11 | Capture par duplication de bureau pour Windows 10 1809 (écran virtuel des bornes), et choix de la méthode de capture sur un Windows plus récent | ⚠️ fait : 192 tests, auto-test complet ici et en mode 1809 simulé (`SUPERRESSCALER_NO_WGC=1`) ; pas essayé sur une vraie 1809 |
 
 ## Releases
 
@@ -71,6 +74,7 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   `publish/`, jamais du dossier qui a servi au test.
 - Version autonome (demande 1 et première archive de la demande 2) : commande du README,
   `--self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true`.
+- Depuis la demande 12, le pilote de l'écran virtuel est dans l'exe : pas de dossier à ajouter à l'archive.
 
 ### Taille de l'exécutable (demande 3)
 - Version autonome : 289 fichiers et 144 Mo une fois dépliée, compressés en un exe de 56 Mo :
@@ -84,3 +88,46 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   Non pris en charge par Microsoft, risque de casse à l'exécution : écarté.
 - Version dépendante de .NET (retenue) : exe de 28 Mo, dont 25 Mo de `Microsoft.Windows.SDK.NET.dll` ;
   archive de 7,6 Mo.
+
+### Écran virtuel (demande 12)
+- Pilote Virtual Display Driver 25.7.23 (MIT, signé SignPath), embarqué tel quel en ressources ; originaux et
+  SHA-256 dans `src/SuperResScaler/VirtualDisplayDriver/SOURCE.txt`. Son INF est en LF : `.gitattributes` empêche
+  git de le convertir, sinon le catalogue signé ne correspond plus. Un test vérifie les SHA-256 des ressources.
+- Créer / détruire : SuperResScaler se relance élevé (`--virtual-display-admin`), crée le périphérique
+  `Root\MttVDD` comme devcon (SetupAPI) avec le pilote extrait dans un dossier temporaire, ou le supprime.
+- Modes : `C:\VirtualDisplayDriver\vdd_settings.xml`, relu sans droits par la commande `RELOAD_DRIVER` sur le
+  tube `\\.\pipe\MTTVirtualDisplayPipe`. Pas de `g_refresh_rate` : le pilote les ajoute à toutes les tailles.
+  Windows arrondit 57,5 Hz en 58. Chaque relecture donne un nouveau `\\.\DISPLAYn` à l'écran virtuel.
+- Constat : SetResolution 0.1.6 (celle des bornes) échoue sur un mode qui n'existe qu'à 57,5 Hz quand `-f`
+  n'est pas donné, et rend quand même 0.
+
+### Vignette et coût de la capture (demande 13)
+- Vignette : copie GDI (`StretchBlt` en HALFTONE) de l'écran virtuel, réduite pendant la copie, hors du fil de
+  l'interface, toutes les 0,5 s et seulement quand la fenêtre est visible. Placée dans la ligne du titre de
+  chaque page (colonne de droite), qui ne prend de place que si l'écran virtuel existe. Super-résolutions en 4:3.
+- Mesures sur ce PC (fenêtres de test à nous sur l'écran virtuel) : copie de la vignette 11 ms en 640x480,
+  20 à 25 ms en 1280x240, 1920x240 et 1920x1080. Capture WGC de l'écran virtuel vers un aperçu 640x480 :
+  image prise moins de 1 ms après sa composition en moyenne, 17 ms au plus ; 11 à 15 % d'un cœur.
+- Le journal donne ces chiffres toutes les 10 s pendant une mise à l'échelle (`CaptureStatistics`).
+- SuperResScaler ne capture pas sous Windows 10 1809 (bornes) : `CreateForWindow` / `CreateForMonitor`
+  demandent la 1903. Il faudrait une capture par duplication de bureau (écran entier) pour 1809.
+
+### Duplication de bureau (demande 14)
+- `DuplicationCapture` (IDXGIOutput1::DuplicateOutput) : écran entier, Windows 8+, donc 1809. Choix dans le profil
+  (Capture > Méthode de capture d'un écran) ou `--capture auto|wgc|duplication`. Auto = WGC dès 1903 (build 18362),
+  sinon duplication. Une fenêtre reste capturée par WGC : sous 1809, choisir l'écran entier comme source.
+- Le rendu se fait sur la carte de l'écran dupliqué (`Renderer(adapter)`). Sur ce PC, l'écran virtuel dépend de la
+  NVIDIA, les deux écrans de l'Intel. `SupportedOSPlatformVersion` est passé à 10.0.17763.
+- Constats :
+  - la première image d'une duplication est noire : elle est ignorée, et un écran immobile est invité à se
+    redessiner (`RedrawWindow`), l'image arrive en ~40 ms ;
+  - un processus ne peut pas dupliquer deux fois le même écran à la fois (E_INVALIDARG) ;
+  - débit brut 56 à 58 images/s en 640x480 et 1920x1080 ; en session vers un écran de l'Intel, 42 images/s en
+    1920x1080 (copie entre cartes), âge moyen 8 à 15 ms contre moins de 1 ms avec WGC ;
+  - un changement de mode perd la duplication (ACCESS_LOST), rouverte en ~250 ms ; une renumérotation aussi.
+- **Écran virtuel : `RELOAD_DRIVER` fait planter le pilote** (événements 10111/10120 de
+  DriverFrameworks-UserMode), Windows le relance : d'où le nouveau `\\.\DISPLAYn`. Après 5 relectures en ~2 min,
+  Windows l'a arrêté (code 43). La page affiche maintenant cet état (CM_Get_DevNode_Status). Pendant une session
+  vers l'autre carte, la NVIDIA est réinitialisée (DEVICE_REMOVED) : la session s'arrête avec un message.
+- L'auto-test vérifie chaque méthode disponible ; en mode 1809 simulé, la mire est sans cadre (Windows 11 dessine
+  sa bordure sur la zone client) et placée hors de l'ombre de la sortie.

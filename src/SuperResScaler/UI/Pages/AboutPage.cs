@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using SuperResScaler.App;
+using SuperResScaler.VirtualDisplay;
 
 namespace SuperResScaler.UI.Pages;
 
@@ -28,5 +29,16 @@ internal sealed class AboutPage : Page
         AddCard(Theme.GlyphAspect, "linuxloader", "Formats d'aspect : original, 4:3, 16:9, _stretch, _crop, recadrage en barillet");
         AddCard(Theme.GlyphEye, "BackForceFeeder", "Détection des jeux par nom de processus et titre de fenêtre");
         AddCard(Theme.GlyphColor, "Vortice.Windows", "Accès à Direct3D 11 depuis .NET (licence MIT)");
+        AddCard(Theme.GlyphVirtualDisplay, $"Virtual Display Driver {EmbeddedDriver.Version}",
+            "Pilote de l'écran virtuel, intégré à l'exe sans modification. Copyright (c) 2024 Virtual Display, licence MIT (github.com/VirtualDrivers/Virtual-Display-Driver)",
+            UiFactory.Button("Licence", (_, _) => ShowDriverLicense()));
+    }
+
+    private void ShowDriverLicense()
+    {
+        string text;
+        try { text = EmbeddedDriver.License; }
+        catch (Exception ex) { text = ex.Message; }
+        MessageBox.Show(FindForm(), text, "Virtual Display Driver — licence", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 }

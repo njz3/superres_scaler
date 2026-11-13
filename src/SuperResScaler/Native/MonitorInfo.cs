@@ -13,6 +13,9 @@ namespace SuperResScaler.Native;
 /// </summary>
 internal sealed partial record MonitorInfo(int Number, string DeviceName, string FriendlyName, string Id, RECT Bounds, bool IsPrimary, IntPtr Handle)
 {
+    /// <summary>EDID manufacturer and product of Virtual Display Driver's monitor, found in its device path.</summary>
+    private const string VirtualMonitorMarker = "MTT1337";
+
     private static volatile IReadOnlyDictionary<string, int> _numbers = new Dictionary<string, int>();
 
     /// <summary>The n of \\.\DISPLAYn.</summary>
@@ -20,8 +23,11 @@ internal sealed partial record MonitorInfo(int Number, string DeviceName, string
 
     public string Name => FriendlyName.Length > 0 ? FriendlyName : DeviceName.Replace(@"\\.\", "");
 
+    /// <summary>The test display of Virtual Display Driver (see VirtualDisplayManager).</summary>
+    public bool IsVirtual => Id.Contains(VirtualMonitorMarker, StringComparison.OrdinalIgnoreCase);
+
     public override string ToString()
-        => $"{Name} — {Bounds.Width}x{Bounds.Height}{(IsPrimary ? " (principal)" : "")} — Écran {Number}";
+        => $"{Name}{(IsVirtual ? " (virtuel)" : "")} — {Bounds.Width}x{Bounds.Height}{(IsPrimary ? " (principal)" : "")} — Écran {Number}";
 
     /// <summary>The numbers the user set by hand, by <see cref="Id"/>.</summary>
     public static void SetNumbers(IReadOnlyDictionary<string, int> numbers) => _numbers = numbers;
@@ -54,8 +60,9 @@ internal sealed partial record MonitorInfo(int Number, string DeviceName, string
     }
 
     /// <summary>
-    /// A display from its stable id, its number ("2"), its device name or a part of its monitor
-    /// name ("DELL", as Hikaruloader's SCREEN_n_DISPLAY); null if empty or absent.
+    /// A display from its stable id, its number ("2"), its device name, "virtuel" for the virtual
+    /// test display, or a part of its monitor name ("DELL", as Hikaruloader's SCREEN_n_DISPLAY);
+    /// null if empty or absent.
     /// </summary>
     public static MonitorInfo? Find(IEnumerable<MonitorInfo> monitors, string? reference)
     {
@@ -65,6 +72,8 @@ internal sealed partial record MonitorInfo(int Number, string DeviceName, string
         var all = monitors as IReadOnlyCollection<MonitorInfo> ?? monitors.ToList();
         if (all.FirstOrDefault(m => string.Equals(m.Id, reference, StringComparison.OrdinalIgnoreCase)) is { } byId)
             return byId;
+        if (reference.Equals("virtuel", StringComparison.OrdinalIgnoreCase) || reference.Equals("virtual", StringComparison.OrdinalIgnoreCase))
+            return all.FirstOrDefault(m => m.IsVirtual);
         if (int.TryParse(reference, out int number))
             return all.FirstOrDefault(m => m.Number == number);
         return all.FirstOrDefault(m => string.Equals(m.DeviceName, reference, StringComparison.OrdinalIgnoreCase))

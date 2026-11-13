@@ -20,7 +20,9 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
 ```
 
 - **Capture** : `Windows.Graphics.Capture` (comme Magpie) — fonctionne même si la fenêtre est
-  recouverte par l'overlay, sans la bordure jaune sous Windows 11.
+  recouverte par l'overlay, sans la bordure jaune sous Windows 11. Un écran entier peut aussi être
+  capturé par la **duplication de bureau** DXGI, seule possible sous Windows 10 1809 (voir
+  *Méthode de capture*).
 - **Rendu** : Direct3D 11 (via [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows)),
   un triangle plein écran et un pixel shader compilé à l'exécution depuis `Shaders/*.hlsl`.
 - **Affichage** : fenêtre popup *layered + transparent + noactivate* couvrant l'écran, swap chain
@@ -29,7 +31,12 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
 
 ## Prérequis
 
-- Windows 10 2004 ou plus récent (Windows 11 recommandé : pas de bordure jaune de capture).
+- Windows 10 1809 ou plus récent (Windows 11 recommandé : pas de bordure jaune de capture).
+  - **1809** (LTSC 2019, celle des bornes) : un écran entier seulement, par duplication de bureau ;
+    pas de capture de fenêtre.
+  - **1903** : capture d'une fenêtre (`Windows.Graphics.Capture`) ; le curseur est toujours capturé.
+  - **2004** : choix du curseur, et la sortie posée sur l'écran capturé est retirée de la capture.
+  - .NET 10 ne prend en charge Windows 10 1809 qu'en édition Entreprise ou LTSC.
 - Une carte graphique Direct3D 11.
 - Pour compiler : SDK .NET 10. Pour exécuter une build non autonome : runtime .NET 10 Desktop.
 
@@ -129,6 +136,85 @@ bouton **Identifier** affiche le numéro sur chaque écran : s'il ne correspond 
 corrigez-le dans *Paramètres > Écrans*. `--display` et `--monitor` acceptent ce numéro ou une partie
 du nom du moniteur (`--display DELL`).
 
+### Méthode de capture
+
+Un écran entier se capture de deux façons, au choix dans le profil (*Capture > Méthode de capture
+d'un écran*) ou avec `--capture auto|wgc|duplication` :
+
+| | Windows.Graphics.Capture | Duplication de bureau |
+| --- | --- | --- |
+| Windows | 10 1903 ou plus récent | 8 ou plus récent, donc 10 1809 |
+| Fenêtre seule | oui | non : un écran entier |
+| Curseur | au choix (2004 et plus) | jamais |
+| Changement de mode de l'écran capturé | suivi | suivi (la duplication est rouverte) |
+| Écran renuméroté (relecture des modes de l'écran virtuel) | la capture s'arrête | rouverte sur le nouveau `\\.\DISPLAYn` si le pilote graphique tient |
+| Âge d'une image prise par la boucle de rendu (mesuré ici, écran virtuel) | < 1 ms en moyenne | 8 à 15 ms en moyenne |
+
+**Auto** (par défaut) prend `Windows.Graphics.Capture` dès Windows 10 1903, la duplication avant.
+Si `Windows.Graphics.Capture` est demandé sur une 1809, la duplication est utilisée, avec un
+message. Une fenêtre est toujours capturée par `Windows.Graphics.Capture` : sous 1809, choisir comme
+source l'écran entier où est le jeu.
+
+La duplication capture ce que l'écran montre vraiment : une fenêtre posée sur le jeu est capturée
+avec lui. Son rendu se fait sur la carte graphique de l'écran capturé. Sur le PC de développement
+(Intel + NVIDIA), l'écran virtuel dépend de la carte NVIDIA et la sortie de l'Intel : Windows copie
+chaque image de l'une à l'autre, et la capture d'un écran en 1920x1080 tombe à 42 images/s, contre
+53 avec `Windows.Graphics.Capture`. Une borne à une seule carte n'a pas cette copie.
+
+Pour essayer sur un Windows récent le comportement de la 1809, lancer SuperResScaler avec la
+variable d'environnement `SUPERRESSCALER_NO_WGC=1` : il fait comme si `Windows.Graphics.Capture`
+n'existait pas (auto-test compris).
+
+### Écran virtuel de test
+
+Pour essayer les super-résolutions sans borne ni émulation d'EDID, SuperResScaler peut créer un
+**écran virtuel** : un moniteur sans matériel, avec les modes de votre choix, y compris ceux que la
+carte graphique refuse (1280x240, 1024x384 à 57,5 Hz…). Un jeu, SetResolution ou SuperResScaler y
+basculent comme sur un vrai écran, et la capture suit les changements de mode. L'écran est
+invisible : on le voit en le mettant à l'échelle sur un vrai écran, avec shader, ratio d'aspect,
+miroir, etc.
+
+- **Page *Écran virtuel*** : *Créer* / *Détruire* (confirmation UAC : il faut les droits
+  d'administrateur), *Mettre à l'échelle*, choix de sa résolution, liste de ses modes (ajouter,
+  retirer, « modes des bornes »). Modifier les modes ne demande pas de droits : le pilote les relit
+  aussitôt.
+- **Vignette** : tant que l'écran virtuel existe, une petite image de son contenu s'affiche en haut
+  à droite de chaque page, rafraîchie toutes les 0,5 s ; un clic ouvre sa page. Les super-résolutions
+  (plus de 2,5 fois plus larges que hautes, comme 1280x240 ou 1024x384) y sont montrées en 4:3, comme
+  sur le tube. Elle est copiée par GDI, hors du fil de l'interface : 11 ms pour un écran en
+  640x480, 25 ms en 1920x1080 sur le PC de développement, soit 2 à 5 % d'un cœur. Rien n'est
+  capturé quand la fenêtre est réduite ou dans la zone de notification.
+- **Pour un jeu** : dans son profil, choisir l'écran virtuel comme **Source** (il est marqué
+  « (virtuel) » dans les listes).
+- **En ligne de commande** : `--virtual-create`, `--virtual-destroy`, `--virtual-modes`,
+  `--virtual-add 1024x384@57.5`, `--virtual-remove 1280x240@60`, et `--display virtuel` pour le
+  capturer.
+
+Les modes sont dans `C:\VirtualDisplayDriver\vdd_settings.xml`, l'emplacement où le pilote les lit.
+Le premier est celui d'un écran qui vient d'être créé. Le fichier écrit par SuperResScaler n'a pas
+de fréquence globale : le pilote ajouterait chacune d'elles à toutes les tailles, ce qui créerait par
+exemple un 1024x384 à 60 Hz que les bornes n'ont pas. Windows arrondit les fréquences : 57,5 Hz
+apparaît en 58 (`SetResolution -f 58`). Chaque relecture des modes donne un nouveau `\\.\DISPLAYn`
+à l'écran virtuel ; les profils, qui gardent l'identifiant du moniteur, n'en sont pas gênés.
+
+**Relire les modes relance le pilote.** Pour relire ses modes, le pilote arrête son propre processus :
+Windows y voit un plantage et le relance. Une mise à l'échelle de l'écran virtuel s'arrête alors,
+avec les deux méthodes de capture (sur le PC de développement, la carte NVIDIA qui rend l'écran
+virtuel est même réinitialisée). Surtout, après **cinq relectures en deux minutes environ**, Windows
+arrête le périphérique (code 43, « Arrêté par Windows » sur la page). Il faut alors le détruire puis
+le recréer, ou redémarrer le PC. Ajouter les modes en une fois (« Modes des bornes ») ne fait qu'une
+relecture.
+
+Le pilote est [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
+25.7.23 (licence MIT, signé par SignPath Foundation), **intégré à l'exe** sans modification : rien
+d'autre à livrer. À la création, ses fichiers sont écrits dans un dossier temporaire après
+vérification de leur SHA-256, installés, puis effacés : Windows en garde sa copie. Les originaux et
+leur provenance sont dans `src/SuperResScaler/VirtualDisplayDriver/` (`SOURCE.txt`) ; leurs octets
+ne doivent pas changer, le catalogue signé couvre l'INF à l'octet près (d'où le `.gitattributes`).
+Détruire l'écran laisse le pilote dans le magasin de pilotes de Windows ; pour l'en retirer aussi
+(en administrateur) : `pnputil /enum-drivers` pour trouver le `oemNN.inf` de `mttvdd.inf`, puis
+`pnputil /delete-driver oemNN.inf /uninstall`.
+
 ### Raccourcis (modifiables dans Paramètres)
 
 | Raccourci | Action |
@@ -151,6 +237,7 @@ SuperResScaler.exe --process game.exe --resolution 1920x240@60
 SuperResScaler.exe --process game.exe --mirror-x
 SuperResScaler.exe --display 2 --monitor 1 --aspect 4:3
 SuperResScaler.exe --display 2 --process game.exe --resolution 1920x240@60
+SuperResScaler.exe --display virtuel --capture duplication --aspect 4:3
 SuperResScaler.exe --process launcher.exe --persist
 SuperResScaler.exe --foreground --delay 3
 ```
@@ -185,7 +272,8 @@ d'affichage disponibles (comme `SetResolution LIST`). Codes de sortie : `0` OK,
 | **Zone client uniquement** | ignore la barre de titre et les bordures |
 | **Recadrage manuel** | pixels à retirer de chaque côté (barres d'outils d'émulateur, bords parasites…) |
 | **Recadrage automatique** | retire les bandes noires (jeu 4:3 centré dans une fenêtre plus large). La zone détectée ne fait que grandir pour éviter les sauts lors des scènes sombres |
-| **Capturer le curseur** | inclut le pointeur de la souris dans l'image |
+| **Capturer le curseur** | inclut le pointeur de la souris dans l'image (pas avec la duplication de bureau) |
+| **Méthode de capture d'un écran** | *Auto*, `Windows.Graphics.Capture` ou duplication de bureau (`--capture`) — voir *Méthode de capture* |
 | **VSync** | synchro verticale (désactivée = tearing autorisé, latence minimale) |
 | **Prévisualisation fenêtrée** | affiche le résultat dans une fenêtre (par ex. 1920x240) pour tester sur un écran de PC |
 
@@ -320,9 +408,11 @@ bandes, rend chaque shader en 1920x240 et 1280x240, rend les formats d'aspect (b
 `_stretch`, `_crop`, barillet) en vérifiant des pixels précis, demande au pilote s'il accepte les
 modes d'affichage sans les appliquer (`CDS_TEST`), lance une vraie session en prévisualisation
 (et en plein écran avec `--selftest-overlay`, ~2 s) et vérifie les pixels affichés.
-Il capture aussi l'écran entier où se trouve la mire, y retrouve celle-ci et lance une session dont
-la sortie est sur cet écran ; de cette capture, seul le rectangle de la mire est enregistré.
-Résultats dans `selftest.txt` + images PNG.
+Il capture aussi l'écran entier où se trouve la mire, avec chaque méthode que ce Windows possède
+(`Windows.Graphics.Capture` et la duplication de bureau), y retrouve celle-ci et lance une session
+dont la sortie est sur cet écran ; de cette capture, seul le rectangle de la mire est enregistré.
+Sous Windows 10 1809, la mire est découpée dans la capture de son écran par duplication, et les
+sessions sur une fenêtre sont sautées (`SKIP`). Résultats dans `selftest.txt` + images PNG.
 
 ## Limites
 
@@ -331,12 +421,20 @@ Résultats dans `selftest.txt` + images PNG.
 - La capture d'un **écran complet** ne garantit pas non plus le plein écran exclusif (selon la
   version de Windows et le jeu) : préférer le mode borderless. L'écran capturé doit faire partie du
   bureau étendu (pas désactivé, pas en duplication).
-- Sous **Windows 10**, l'écran capturé porte un liseré jaune imposé par le système.
+- Sous **Windows 10**, l'écran capturé par `Windows.Graphics.Capture` porte un liseré jaune
+  imposé par le système (pas avec la duplication de bureau).
+- Sous **Windows 10 1809**, seul un écran entier se capture (duplication de bureau, sans curseur).
 - Une fenêtre **réduite** n'est pas capturée (l'overlay se masque jusqu'à sa restauration).
 - Les **clics souris** traversent l'overlay et atteignent ce qui se trouve dessous aux mêmes
   coordonnées écran : ils ne sont pas remappés vers la position dans le jeu. Clavier et manettes
   ne sont pas concernés (le jeu garde le focus).
-- La capture ajoute environ une image de latence (comme Magpie).
+- La capture ajoute environ une image de latence (comme Magpie). Pendant la mise à l'échelle, le
+  journal indique toutes les 10 s les images capturées par seconde et leur âge quand la boucle de
+  rendu les prend (`Capture: … frames/s, frame age when picked up …`). Mesuré sur le PC de
+  développement en capturant l'écran virtuel (640x480 ou 1920x1080, sortie en 640x480) : âge moyen
+  inférieur à 1 ms, 17 ms au plus (une image à 60 Hz), et 11 à 15 % d'un cœur pour tout le
+  processus. L'affichage avec VSync ajoute ensuite une image de l'écran de sortie. Avec la
+  duplication de bureau, l'image est en moyenne 8 à 15 ms plus vieille quand elle est prise.
 - Le contenu protégé (DRM) apparaît noir.
 
 ## Organisation du code
@@ -353,16 +451,27 @@ src/SuperResScaler/
   Engine/OverlayWindow.cs     fenêtre overlay (plein écran click-through ou prévisualisation)
   Engine/Geometry.cs          zone source, placement (formats du linuxloader, barillet)
   Native/DisplayModes.cs      modes d'affichage, changement et retour à la résolution d'origine
+  Native/SetupApi.cs          création et suppression d'un périphérique racine (comme devcon)
+  VirtualDisplay/             écran virtuel : pilote embarqué, création/destruction élevée, modes
+  VirtualDisplayDriver/       pilote Virtual Display Driver signé, embarqué dans l'exe (SOURCE.txt)
   Engine/BlackBarDetector.cs  détection des bandes noires
-  Capture/FrameCapture.cs     Windows.Graphics.Capture (fenêtre ou écran)
+  Engine/CaptureStatistics.cs images capturées par seconde et leur âge, dans le journal
+  Capture/CaptureMethod.cs    choix de la méthode de capture selon la version de Windows
+  Capture/CapturedFrame.cs    image capturée, source d'images commune aux deux méthodes
+  Capture/FrameCapture.cs     Windows.Graphics.Capture (fenêtre ou écran, Windows 10 1903+)
+  Capture/DuplicationCapture.cs  duplication de bureau DXGI (écran entier, Windows 10 1809)
   Capture/WinRTInterop.cs     ponts WinRT <-> D3D11
+  Capture/ScreenSnapshot.cs   petite copie GDI d'un écran (vignette de l'écran virtuel)
   Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders
   Rendering/SwapChainPresenter.cs  swap chain flip-model basse latence
   Config/                     options, profils, settings.json
   UI/MainForm.cs              fenêtre façon Magpie : navigation, pages, zone de notification
-  UI/Pages/                   Accueil, profil (par défaut ou jeu), Paramètres, À propos
+  UI/Pages/                   Accueil, Écran virtuel, profil (par défaut ou jeu), Paramètres, À propos
   UI/Controls.cs, Dialogs.cs  cartes de réglages, interrupteurs, raccourcis, Nouveau profil
   UI/DisplayIdentifier.cs     bouton Identifier : grand numéro sur chaque écran
+  UI/VirtualDisplayThumbnail.cs  vignette de l'écran virtuel, en haut à droite des pages
   Shaders/                    shaders HLSL (copiés à côté de l'exécutable)
-tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage, profils)
+tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage, profils,
+                              écran virtuel : modes, vdd_settings.xml, pilote embarqué intact, vignette ;
+                              statistiques de capture)
 ```
