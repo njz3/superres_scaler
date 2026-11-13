@@ -29,7 +29,9 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; auto-test complet sur Racecab1 sous .NET 8.0.30 (demande 19) |
 | 19 | 13/11 | Publier la version .NET 8 pour la borne | ✅ `a4f623b` poussé, archive `ga4f623b` (7,4 Mo). Sur Racecab1 (1809, .NET 8.0.30 déjà installé), d'après Image borne : auto-test 42 PASS, 1 SKIP, « ALL TESTS PASSED ». Écran virtuel et jeux Raw Thrills à essayer |
 | 20 | 13/11 | Supprimer le dossier `g26d22d7` (exe .NET 10) resté dans `releases` | ✅ mis à la corbeille ; restent les archives 0.2.1, 0.3.0 et la version de test `ga4f623b` |
-| 21 | 13/11 | Faire une release et demander à Image borne de la déployer | ⚠️ 0.4.0 (`f50e6f6` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test complet sur une copie ; déploiement demandé à Image borne |
+| 21 | 13/11 | Faire une release et demander à Image borne de la déployer | ✅ 0.4.0 (`f50e6f6` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test complet sur une copie. Déployée par Image borne sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` (SHA-256 vérifié, `--help` démarre sur .NET 8.0.30) ; `settings.json` du 24/10 gardé ; 0.2.1 sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.2.1-avant-0.4.0-20261113`. Aucun lanceur n'appelle encore SuperResScaler |
+| 22 | 13/11 | Retirer des bornes le `README.md` et le `RELEASE.txt` de la 0.2.1, restés dans `C:\Racecab\Utils\superres` | 🔄 demandé à Image borne (ils restent dans la sauvegarde de la 0.2.1) ; pour la ligne « started on » du journal, `--virtual-modes` (lecture seule) : `--help` et `--list-modes` s'arrêtent avant d'ouvrir le journal |
+| 23 | 13/11 | Optimiser capture et affichage pour rester à 60 i/s quand le jeu tourne à 60 (une image de retard acceptable, pas de perte d'images) | ⚠️ boucle de rendu au rythme de la source, présentation sans attente du rafraîchissement, priorité GPU haute ; mesuré ici avec une source à 60 i/s : 59,8 sur 59,8 en duplication (57,9 avant), 59,6 en aperçu (40,6 avant) ; 195 tests, auto-tests complets ; pas commité, pas essayé sur une borne |
 
 ## Releases
 
@@ -169,3 +171,48 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 - Racecab1, d'après Image borne : « started on .NET 8.0.30, Windows 10.0.17763.0 », auto-test 42 PASS, 1 SKIP
   (sessions sur une fenêtre), « ALL TESTS PASSED ». La session par duplication s'affiche en 560x240 sur le PHL en
   640x480. Les bornes ont le .NET 8.0.30 Desktop Runtime : rien à installer.
+
+### Essai des Raw Thrills avec l'écran virtuel (13/11, 0.4.0)
+- Fait par Image borne, avec l'accord du propriétaire. Le propriétaire a fait la mise en place, à la borne :
+  - écran virtuel créé, en écran principal (`\\.\DISPLAY7`, 0,0) ;
+  - PHL en secondaire (`\\.\DISPLAY1`, -640,0) ;
+  - mode 1360x768 ajouté (1366x768 non ajouté, aucun jeu essayé ne l'a demandé).
+- Commande : `--display virtuel --monitor PHL --mode aspect --process sdaemon.exe`, puis le jeu par
+  `RunTeknoParrotGame.cmd`. Les lanceurs TP appellent maintenant `SetResolution RESTORE`.
+- Résultat :
+  - le propriétaire voit les jeux sur les PHL, qui restent en 640x480 pendant et après ;
+  - l'écran virtuel suit les modes des jeux (1360x768, 1920x1080) et revient en 640x480 à la sortie ;
+  - les commandes vJoy et le clavier atteignent le jeu.
+  - Un premier constat « juste le bureau » avait été fait entre deux jeux : SuperResScaler attend la fenêtre du jeu.
+- Images/s en jeu (journal, toutes les 10 s) :
+  - Dirty Drivin 60 en 1920x1080, H2 Overdrive 48 à 60 en 1360x768 ;
+  - FNF SuperCars 39 à 48, Nicktoons Nitro 42 à 46, FNF 42 à 45, FNF SuperBikes 36 à 40 ;
+  - FNF Drift 38 à 40, Batman 30 stable.
+  - Âge moyen 4 à 15 ms, 50 ms au plus.
+  - Dirty Drivin à 60 montre que la chaîne n'est pas le frein : les autres cadences sont celles des jeux.
+  - Les baisses en fin de partie coïncident avec les relevés d'Image borne (consoles, captures GDI).
+- Au lancement d'un jeu, et quand l'écran virtuel revient en 640x480 à la sortie, le journal note « accès perdu » ;
+  la duplication est rouverte en 20 à 250 ms.
+- Sans rapport avec SuperResScaler :
+  - Cruis'n Blast n'a pas de fenêtre `game.exe` (nom de processus à relever) ;
+  - Snow Cross plante comme avant ;
+  - FNF SuperBikes 2 a planté (sdaemon) ;
+  - une boîte d'erreur de sdaemon, restée sur l'écran virtuel, se voit sur le PHL jusqu'à ce qu'on la ferme.
+
+### Cadence de 60 images/s (demande 23)
+- Mesure de référence sur ce PC : une fenêtre D3D présente 60 images/s (Present(1)) sur l'écran virtuel, qui est
+  mis à l'échelle sur l'écran du portable. Avec la boucle de la 0.4.0, qui attend le rafraîchissement de la sortie
+  puis prend la dernière image, on reprend 57,9 images/s en duplication plein écran, 54,5 en WGC et 40,6 en aperçu
+  fenêtré : des images arrivent à deux entre deux rafraîchissements de la sortie, l'une est perdue.
+- Changements :
+  - la boucle attend la prochaine image capturée (`IFrameSource.WaitForFrame`, AcquireNextFrame avec délai, ou
+    l'événement FrameArrived de WGC), la dessine et la présente aussitôt ;
+  - Present(0) : l'écran montre la dernière image à son rafraîchissement, sans déchirement avec la VSync ;
+  - 3 tampons, latence GPU de 1 image ;
+  - priorité GPU haute du processus (D3DKMTSetProcessSchedulingPriorityClass, comme OBS) et du device ;
+  - fil de rendu en priorité Highest.
+- Le journal compte les images de la source (AccumulatedFrames de la duplication, images vidées du pool de WGC),
+  celles prises, celles jamais affichées et les présentations.
+- Après : 59,8 sur 59,8 en duplication 640x480, 59,3 sur 59,6 en 1920x1080, 59,6 en aperçu ; âge moyen < 0,5 ms.
+  WGC : Windows ne livre que 53 images/s sur ce portable à deux cartes, toutes prises.
+- `Time` et `FrameCount` des shaders n'avancent plus qu'à chaque nouvelle image (aucun shader livré ne s'en sert).

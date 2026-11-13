@@ -1,6 +1,7 @@
 // Copyright (c) Benjamin Maurin (njz3) 2026
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using SuperResScaler.Capture;
 using SuperResScaler.Config;
@@ -19,9 +20,12 @@ internal sealed class ScalingSession
     /// <summary>Captured frames between two black-bar analyses.</summary>
     private const int AutoCropInterval = 30;
 
-    /// <summary>Loop iterations between two top-most re-assertions / display size checks.</summary>
-    private const int TopMostInterval = 120;
-    private const int DisplayCheckInterval = 60;
+    /// <summary>Milliseconds between two top-most re-assertions / display size checks.</summary>
+    private const int TopMostInterval = 2000;
+    private const int DisplayCheckInterval = 1000;
+
+    /// <summary>Longest wait for a captured frame: the loop still pumps messages and follows commands meanwhile.</summary>
+    private const int FrameWaitMs = 20;
 
     private readonly IntPtr _window;
     private readonly bool _capturesDisplay;
@@ -48,6 +52,9 @@ internal sealed class ScalingSession
     private Rectangle _lastRegion;
     private long _capturedFrames;
 
+    /// <summary>The output must be drawn again: new frame, new options, new size.</summary>
+    private bool _redraw = true;
+
     private ScalingSession(IntPtr window, ScalingOptions options, Action<ScalingSession, string?> onEnded, Action<string>? onMessage)
     {
         _window = window;
@@ -55,7 +62,7 @@ internal sealed class ScalingSession
         _options = options.Snapshot();
         _onEnded = onEnded;
         _onMessage = onMessage;
-        _thread = new Thread(Run) { IsBackground = true, Name = "SuperResScaler render", Priority = ThreadPriority.AboveNormal };
+        _thread = new Thread(Run) { IsBackground = true, Name = "SuperResScaler render", Priority = ThreadPriority.Highest };
         _thread.SetApartmentState(ApartmentState.MTA);
     }
 
@@ -227,8 +234,8 @@ internal sealed class ScalingSession
         var presenter = _presenter!;
         var capture = _capture!;
         bool hasImage = false;
-        long iteration = 0;
         int presentFailures = 0;
+        long nextDisplayCheck = 0, nextTopMost = 0;
 
         while (!_stopRequested)
         {
@@ -252,30 +259,44 @@ internal sealed class ScalingSession
                 continue;
             }
 
-            iteration++;
-            if (!overlay.IsPreview && iteration % DisplayCheckInterval == 0)
-                CheckDisplayBounds();
+            long now = Stopwatch.GetTimestamp();
+            if (!overlay.IsPreview && now >= nextDisplayCheck)
+            {
+                nextDisplayCheck = now + DisplayCheckInterval * Stopwatch.Frequency / 1000;
+                if (CheckDisplayBounds())
+                    _redraw = true;
+            }
 
-            // Every successful wait must be followed by a Present (the waitable object is a semaphore).
-            presenter.WaitForNextFrame(100);
-
-            using (var frame = capture.TryGetLatestFrame())
+            // Paced by the captured picture: each new frame is drawn and presented as soon as it
+            // arrives, and the output shows the latest one at its own refresh. Waiting for the
+            // output's refresh first would lose frames whenever its clock drifts from the source's.
+            using (var frame = capture.WaitForFrame(FrameWaitMs))
             {
                 if (frame != null)
                 {
-                    _statistics.Add(CaptureStatistics.Now() - frame.ComposedAt);
+                    _statistics.Add(CaptureStatistics.Now() - frame.ComposedAt, frame.SourceFrames);
                     if (UpdateSource(frame))
+                    {
                         hasImage = true;
+                        _redraw = true;
+                    }
                 }
             }
-            if (_statistics.TryReport(System.Diagnostics.Stopwatch.GetTimestamp()) is { } report)
+            if (_statistics.TryReport(Stopwatch.GetTimestamp()) is { } report)
                 Log.Info(report);
+            if (!_redraw)
+            {
+                KeepOnTop();
+                continue;
+            }
+            _redraw = false;
 
             var placement = Geometry.ComputePlacement(_options, renderer.CapturedWidth, renderer.CapturedHeight, presenter.Width, presenter.Height);
             renderer.Draw(presenter.RenderTarget, placement);
             try
             {
                 presenter.Present(_options.VSync);
+                _statistics.AddPresent();
                 presentFailures = 0;
             }
             catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode == Vortice.DXGI.ResultCode.DeviceRemoved
@@ -295,14 +316,25 @@ internal sealed class ScalingSession
                 renderer.Context.ClearState();
                 presenter.Dispose();
                 presenter = _presenter = new SwapChainPresenter(renderer, overlay.Handle, _outputBounds.Width, _outputBounds.Height);
+                _redraw = true;
             }
 
             if (hasImage && !overlay.IsVisible)
                 overlay.Show();
-            else if (!overlay.IsPreview && iteration % TopMostInterval == 0)
-                overlay.BringToTop();
+            else
+                KeepOnTop();
         }
         return null;
+
+        // A top-most game window may have been activated above the output: re-asserted every 2 s.
+        void KeepOnTop()
+        {
+            long time = Stopwatch.GetTimestamp();
+            if (overlay.IsPreview || !overlay.IsVisible || time < nextTopMost)
+                return;
+            nextTopMost = time + TopMostInterval * Stopwatch.Frequency / 1000;
+            overlay.BringToTop();
+        }
     }
 
     private bool UpdateSource(CapturedFrame frame)
@@ -335,6 +367,7 @@ internal sealed class ScalingSession
     {
         var previous = _options;
         _options = options;
+        _redraw = true; // shader, aspect, mirror...: seen at once, even on a still picture
 
         if (!string.Equals(previous.Shader, options.Shader, StringComparison.OrdinalIgnoreCase))
         {
@@ -410,17 +443,18 @@ internal sealed class ScalingSession
             _window != IntPtr.Zero ? MonitorInfo.FromWindow(_window) : null);
     }
 
-    /// <summary>Follows display mode changes (e.g. switching between 1920x240 and 2560x240).</summary>
-    private void CheckDisplayBounds()
+    /// <summary>Follows display mode changes (e.g. switching between 1920x240 and 2560x240). True when the output changed.</summary>
+    private bool CheckDisplayBounds()
     {
         var bounds = ResolveOutputBounds();
         if (bounds == _outputBounds)
-            return;
+            return false;
         Log.Info($"Output bounds changed from {_outputBounds} to {bounds}");
         _outputBounds = bounds;
         _overlay!.SetBounds(bounds);
         _renderer!.Context.ClearState(); // the back buffer must not be bound while resizing
         _presenter!.Resize(_renderer.Device, bounds.Width, bounds.Height);
+        return true;
     }
 
     private void Cleanup()

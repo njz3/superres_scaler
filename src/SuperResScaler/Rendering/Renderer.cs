@@ -134,6 +134,7 @@ internal sealed class Renderer : IDisposable
             using (used)
                 Log.Info($"D3D11 device: {used.Description.Description}, feature level {level}");
         }
+        GpuPriority.Raise(Device);
 
         _vertexShader = Device.CreateVertexShader(Compile(VertexShaderSource, "FullscreenTriangle", "vs" + _profileSuffix));
         byte[] stripBytecode = Compile(StripVertexShaderSource, "BarrelStrip", "vs" + _profileSuffix);

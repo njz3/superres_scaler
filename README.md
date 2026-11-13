@@ -26,8 +26,13 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
 - **Rendu** : Direct3D 11 (via [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows)),
   un triangle plein écran et un pixel shader compilé à l'exécution depuis `Shaders/*.hlsl`.
 - **Affichage** : fenêtre popup *layered + transparent + noactivate* couvrant l'écran, swap chain
-  flip-model avec objet d'attente de latence (1 image en file) et VSync. Le jeu garde le focus
-  clavier/manette.
+  flip-model à 3 tampons. Le jeu garde le focus clavier/manette.
+- **Cadence** : la boucle de rendu suit l'image capturée, pas l'écran de sortie. Chaque nouvelle
+  image est dessinée et présentée dès son arrivée (intervalle de synchro 0), et l'écran de sortie
+  montre la dernière à son rafraîchissement, sans déchirement si la VSync est active. Attendre
+  d'abord le rafraîchissement de la sortie faisait perdre des images, car ses deux horloges à 60 Hz
+  et celle du jeu dérivent l'une de l'autre. Le rendu a aussi la priorité GPU haute (comme OBS),
+  pour ne pas attendre derrière un jeu qui occupe la carte.
 
 ## Prérequis
 
@@ -157,7 +162,8 @@ d'un écran*) ou avec `--capture auto|wgc|duplication` :
 | Curseur | au choix (2004 et plus) | jamais |
 | Changement de mode de l'écran capturé | suivi | suivi (la duplication est rouverte) |
 | Écran renuméroté (relecture des modes de l'écran virtuel) | la capture s'arrête | rouverte sur le nouveau `\\.\DISPLAYn` si le pilote graphique tient |
-| Âge d'une image prise par la boucle de rendu (mesuré ici, écran virtuel) | < 1 ms en moyenne | 8 à 15 ms en moyenne |
+| Source à 60 images/s sur l'écran virtuel, sortie sur l'autre carte (mesuré ici) | 53 images/s livrées par Windows | 59 à 60 images/s |
+| Âge d'une image prise par la boucle de rendu (mesuré ici) | < 0,5 ms en moyenne | < 0,5 ms en moyenne |
 
 **Auto** (par défaut) prend `Windows.Graphics.Capture` dès Windows 10 1903, la duplication avant.
 Si `Windows.Graphics.Capture` est demandé sur une 1809, la duplication est utilisée, avec un
@@ -167,8 +173,9 @@ source l'écran entier où est le jeu.
 La duplication capture ce que l'écran montre vraiment : une fenêtre posée sur le jeu est capturée
 avec lui. Son rendu se fait sur la carte graphique de l'écran capturé. Sur le PC de développement
 (Intel + NVIDIA), l'écran virtuel dépend de la carte NVIDIA et la sortie de l'Intel : Windows copie
-chaque image de l'une à l'autre, et la capture d'un écran en 1920x1080 tombe à 42 images/s, contre
-53 avec `Windows.Graphics.Capture`. Une borne à une seule carte n'a pas cette copie.
+chaque image de l'une à l'autre. La duplication y tient quand même 59 à 60 images/s depuis que la
+boucle de rendu suit la source (en aperçu fenêtré, 40 à 42 avant). Une borne à une seule carte n'a pas
+cette copie.
 
 Pour essayer sur un Windows récent le comportement de la 1809, lancer SuperResScaler avec la
 variable d'environnement `SUPERRESSCALER_NO_WGC=1` : il fait comme si `Windows.Graphics.Capture`
@@ -437,13 +444,22 @@ sessions sur une fenêtre sont sautées (`SKIP`). Résultats dans `selftest.txt`
 - Les **clics souris** traversent l'overlay et atteignent ce qui se trouve dessous aux mêmes
   coordonnées écran : ils ne sont pas remappés vers la position dans le jeu. Clavier et manettes
   ne sont pas concernés (le jeu garde le focus).
-- La capture ajoute environ une image de latence (comme Magpie). Pendant la mise à l'échelle, le
-  journal indique toutes les 10 s les images capturées par seconde et leur âge quand la boucle de
-  rendu les prend (`Capture: … frames/s, frame age when picked up …`). Mesuré sur le PC de
-  développement en capturant l'écran virtuel (640x480 ou 1920x1080, sortie en 640x480) : âge moyen
-  inférieur à 1 ms, 17 ms au plus (une image à 60 Hz), et 11 à 15 % d'un cœur pour tout le
-  processus. L'affichage avec VSync ajoute ensuite une image de l'écran de sortie. Avec la
-  duplication de bureau, l'image est en moyenne 8 à 15 ms plus vieille quand elle est prise.
+- La capture ajoute au plus une image de latence : la dernière image présentée attend le prochain
+  rafraîchissement de l'écran de sortie.
+- Toutes les 10 s pendant la mise à l'échelle, le journal donne une ligne `Capture: …` :
+  - les images produites par la source (le jeu) ;
+  - celles prises, et celles jamais affichées, remplacées par une plus récente avant d'être prises ;
+  - les présentations ;
+  - l'âge des images quand elles sont prises.
+  Les images sources viennent du compteur de la duplication, ou des images reçues de WGC.
+- Mesuré sur le PC de développement, avec une source qui présente 60 images/s sur l'écran virtuel :
+  - duplication en 640x480 : 59,8 images/s produites, toutes affichées (57,9 avec l'ancienne boucle,
+    qui attendait l'écran de sortie) ;
+  - duplication en 1920x1080 : 59,3 sur 59,6 ;
+  - aperçu fenêtré : 59,6 au lieu de 40,6 ;
+  - âge moyen des images quand elles sont prises : moins de 0,5 ms ;
+  - avec `Windows.Graphics.Capture`, Windows ne livre que 53 images/s sur ce portable à deux cartes,
+    toutes affichées.
 - Le contenu protégé (DRM) apparaît noir.
 
 ## Organisation du code
@@ -472,7 +488,8 @@ src/SuperResScaler/
   Capture/WinRTInterop.cs     ponts WinRT <-> D3D11
   Capture/ScreenSnapshot.cs   petite copie GDI d'un écran (vignette de l'écran virtuel)
   Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders
-  Rendering/SwapChainPresenter.cs  swap chain flip-model basse latence
+  Rendering/SwapChainPresenter.cs  swap chain flip-model, présentation sans attente du rafraîchissement
+  Rendering/GpuPriority.cs    priorité GPU du rendu (classe haute, comme OBS)
   Config/                     options, profils, settings.json
   UI/MainForm.cs              fenêtre façon Magpie : navigation, pages, zone de notification
   UI/Pages/                   Accueil, Écran virtuel, profil (par défaut ou jeu), Paramètres, À propos

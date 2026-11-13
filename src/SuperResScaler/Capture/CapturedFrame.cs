@@ -10,14 +10,19 @@ internal sealed class CapturedFrame : IDisposable
     private readonly Action? _release;
 
     /// <param name="release">Gives the frame back to its source (Windows.Graphics.Capture or the duplication).</param>
-    public CapturedFrame(ID3D11Texture2D texture, int contentWidth, int contentHeight, TimeSpan composedAt, Action? release)
+    /// <param name="sourceFrames">Frames the source produced since the previous one taken, this one included.</param>
+    public CapturedFrame(ID3D11Texture2D texture, int contentWidth, int contentHeight, TimeSpan composedAt, Action? release, int sourceFrames = 1)
     {
         Texture = texture;
         ContentWidth = contentWidth;
         ContentHeight = contentHeight;
         ComposedAt = composedAt;
         _release = release;
+        SourceFrames = Math.Max(1, sourceFrames);
     }
+
+    /// <summary>Frames produced since the previous frame taken, this one included: more than 1 means some were never shown.</summary>
+    public int SourceFrames { get; }
 
     public ID3D11Texture2D Texture { get; }
 
@@ -51,4 +56,10 @@ internal interface IFrameSource : IDisposable
     /// changed since the last call. The caller disposes the frame before calling this method again.
     /// </summary>
     CapturedFrame? TryGetLatestFrame();
+
+    /// <summary>
+    /// Like <see cref="TryGetLatestFrame"/>, but waits up to <paramref name="timeoutMs"/> for a new
+    /// frame: the render loop runs at the pace of the captured picture.
+    /// </summary>
+    CapturedFrame? WaitForFrame(int timeoutMs);
 }

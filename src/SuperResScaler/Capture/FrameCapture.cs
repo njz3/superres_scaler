@@ -26,6 +26,7 @@ internal sealed class FrameCapture : IFrameSource
     private readonly GraphicsCaptureItem _item;
     private readonly Direct3D11CaptureFramePool _framePool;
     private readonly GraphicsCaptureSession _session;
+    private readonly AutoResetEvent _frameArrived = new(false);
     private SizeInt32 _poolSize;
     private SizeInt32? _pendingResize;
     private volatile bool _closed;
@@ -50,6 +51,7 @@ internal sealed class FrameCapture : IFrameSource
 
         // Free-threaded: frames are pulled from the render thread, no dispatcher needed.
         _framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(_device, PixelFormat, BufferCount, _poolSize);
+        _framePool.FrameArrived += OnFrameArrived; // raised on a system thread: only wakes the render loop
         _session = _framePool.CreateCaptureSession(_item);
         SetCursorCapture(captureCursor);
         DisableCaptureBorder(_session);
@@ -81,10 +83,12 @@ internal sealed class FrameCapture : IFrameSource
         }
 
         Direct3D11CaptureFrame? latest = null;
+        int frames = 0;
         while (_framePool.TryGetNextFrame() is { } frame)
         {
             latest?.Dispose();
             latest = frame;
+            frames++;
         }
         if (latest == null)
             return null;
@@ -94,8 +98,18 @@ internal sealed class FrameCapture : IFrameSource
             _pendingResize = contentSize;
 
         return new CapturedFrame(WinRTInterop.GetTexture(latest.Surface), contentSize.Width, contentSize.Height,
-            latest.SystemRelativeTime, latest.Dispose);
+            latest.SystemRelativeTime, latest.Dispose, frames);
     }
+
+    public CapturedFrame? WaitForFrame(int timeoutMs)
+    {
+        if (TryGetLatestFrame() is { } frame)
+            return frame;
+        _frameArrived.WaitOne(timeoutMs);
+        return TryGetLatestFrame();
+    }
+
+    private void OnFrameArrived(Direct3D11CaptureFramePool sender, object args) => _frameArrived.Set();
 
     private static void DisableCaptureBorder(GraphicsCaptureSession session)
     {
@@ -126,8 +140,10 @@ internal sealed class FrameCapture : IFrameSource
     public void Dispose()
     {
         _item.Closed -= OnItemClosed;
+        _framePool.FrameArrived -= OnFrameArrived;
         _session.Dispose();
         _framePool.Dispose();
         _device.Dispose();
+        _frameArrived.Dispose();
     }
 }

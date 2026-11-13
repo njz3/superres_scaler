@@ -57,13 +57,33 @@ internal sealed class DuplicationCapture : IFrameSource
     /// <summary>The duplication never draws the cursor.</summary>
     public void SetCursorCapture(bool enabled) { }
 
-    public CapturedFrame? TryGetLatestFrame()
+    public CapturedFrame? TryGetLatestFrame() => Acquire(0);
+
+    public CapturedFrame? WaitForFrame(int timeoutMs)
+    {
+        if (_duplication == null && !Reopen())
+        {
+            Thread.Sleep(Math.Min(timeoutMs, 20)); // lost: retried at most every 250 ms, without spinning meanwhile
+            return null;
+        }
+        // A cursor move alone wakes AcquireNextFrame without a new picture: wait again until the deadline.
+        long deadline = Stopwatch.GetTimestamp() + timeoutMs * Stopwatch.Frequency / 1000;
+        while (true)
+        {
+            long remaining = (deadline - Stopwatch.GetTimestamp()) * 1000 / Stopwatch.Frequency;
+            var frame = Acquire((uint)Math.Max(0, remaining));
+            if (frame != null || remaining <= 0 || _duplication == null)
+                return frame;
+        }
+    }
+
+    private CapturedFrame? Acquire(uint timeoutMs)
     {
         if (_duplication == null && !Reopen())
             return null;
         Release(); // frames are given back when disposed, this is only a safety net
 
-        Result result = _duplication!.AcquireNextFrame(0, out OutduplFrameInfo info, out IDXGIResource? resource);
+        Result result = _duplication!.AcquireNextFrame(timeoutMs, out OutduplFrameInfo info, out IDXGIResource? resource);
         if (result == ResultCode.WaitTimeout)
         {
             NudgeIfStill();
@@ -103,7 +123,9 @@ internal sealed class DuplicationCapture : IFrameSource
         }
         var description = texture.Description;
         long composed = info.LastPresentTime != 0 ? info.LastPresentTime : Stopwatch.GetTimestamp();
-        return new CapturedFrame(texture, (int)description.Width, (int)description.Height, QpcToTime(composed), Release);
+        // AccumulatedFrames: updates of the display since the previous frame taken (more than 1 = some missed).
+        return new CapturedFrame(texture, (int)description.Width, (int)description.Height, QpcToTime(composed), Release,
+            (int)info.AccumulatedFrames);
     }
 
     /// <summary>The graphics card the display <paramref name="deviceName"/> (\\.\DISPLAYn) belongs to, or null.</summary>

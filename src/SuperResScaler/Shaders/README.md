@@ -19,10 +19,13 @@ on peut les modifier ou en ajouter sans recompiler l'application
 | `SourceSize` / `InvSourceSize` | `float2` | taille de l'image source en pixels (et inverse) |
 | `OutputSize` / `InvOutputSize` | `float2` | taille du rectangle de destination (et inverse) |
 | `OutputOffset` | `float2` | coin haut-gauche de la destination sur l'écran |
-| `Time` | `float` | secondes depuis le début de la mise à l'échelle |
-| `FrameCount` | `uint` | numéro d'image |
+| `Time` | `float` | secondes depuis le début de la mise à l'échelle, au moment du dessin |
+| `FrameCount` | `uint` | numéro d'image dessinée |
 | `input.TexCoord` | `float2` | 0..1 sur la destination, au centre des pixels (avec le miroir, le dessin est déjà retourné : rien à gérer dans un shader) |
 | `Texel(int2 p)` | fonction | lit un pixel source (bords clampés) |
+
+La sortie n'est redessinée qu'à chaque nouvelle image capturée (ou réglage changé), au rythme du jeu :
+`Time` et `FrameCount` n'avancent pas sur une image fixe, et un effet animé par eux s'y arrête.
 
 ## Exemple
 

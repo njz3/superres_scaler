@@ -1,21 +1,25 @@
 // Copyright (c) Benjamin Maurin (njz3) 2026
 
 using SharpGen.Runtime;
-using SuperResScaler.Native;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 
 namespace SuperResScaler.Rendering;
 
 /// <summary>
-/// Flip-model swap chain on the overlay window, with a frame-latency waitable object so the
-/// render loop runs once per display refresh with a single frame of queueing (low latency).
-/// Falls back to the legacy blit model if the flip model is refused.
+/// Flip-model swap chain on the overlay window. Frames are presented as soon as they are drawn,
+/// with a sync interval of 0: the display shows the latest one at its next refresh, without
+/// tearing (unless VSync is off), and presenting never waits for the output's refresh. So the
+/// render loop follows the captured picture's rate, not the output's: when two independent
+/// 60 Hz clocks drift, no frame is lost waiting for the wrong one. Falls back to the legacy blit
+/// model if the flip model is refused.
 /// </summary>
 internal sealed class SwapChainPresenter : IDisposable
 {
+    /// <summary>One shown, one waiting for the refresh, one to draw in: presenting never blocks on a free buffer.</summary>
+    private const uint FlipBufferCount = 3;
+
     private readonly IDXGISwapChain1 _swapChain;
-    private readonly IntPtr _waitHandle;
     private readonly bool _tearingSupported;
     private readonly SwapChainFlags _flags;
     private ID3D11RenderTargetView _renderTarget;
@@ -25,7 +29,9 @@ internal sealed class SwapChainPresenter : IDisposable
         Width = width;
         Height = height;
 
-        using var dxgiDevice = renderer.Device.QueryInterface<IDXGIDevice>();
+        using var dxgiDevice = renderer.Device.QueryInterface<IDXGIDevice1>();
+        // At most one frame queued for the GPU: the CPU never runs ahead of it.
+        dxgiDevice.SetMaximumFrameLatency(1);
         dxgiDevice.GetAdapter(out IDXGIAdapter adapter).CheckError();
         using (adapter)
         using (var factory = adapter.GetParent<IDXGIFactory2>())
@@ -33,7 +39,7 @@ internal sealed class SwapChainPresenter : IDisposable
             using (var factory5 = factory.QueryInterfaceOrNull<IDXGIFactory5>())
                 _tearingSupported = factory5?.PresentAllowTearing ?? false;
 
-            _flags = SwapChainFlags.FrameLatencyWaitableObject | (_tearingSupported ? SwapChainFlags.AllowTearing : SwapChainFlags.None);
+            _flags = _tearingSupported ? SwapChainFlags.AllowTearing : SwapChainFlags.None;
             var desc = new SwapChainDescription1
             {
                 Width = (uint)width,
@@ -41,7 +47,7 @@ internal sealed class SwapChainPresenter : IDisposable
                 Format = Format.B8G8R8A8_UNorm,
                 SampleDescription = new SampleDescription(1, 0),
                 BufferUsage = Usage.RenderTargetOutput,
-                BufferCount = 2,
+                BufferCount = FlipBufferCount,
                 Scaling = Scaling.Stretch,
                 SwapEffect = SwapEffect.FlipDiscard,
                 AlphaMode = AlphaMode.Ignore,
@@ -67,20 +73,8 @@ internal sealed class SwapChainPresenter : IDisposable
             factory.MakeWindowAssociation(hwnd, WindowAssociationFlags.IgnoreAll);
         }
 
-        if (IsFlipModel)
-        {
-            using var swapChain2 = _swapChain.QueryInterface<IDXGISwapChain2>();
-            swapChain2.MaximumFrameLatency = 1;
-            _waitHandle = swapChain2.FrameLatencyWaitableObject;
-        }
-        else
-        {
-            using var dxgiDevice1 = renderer.Device.QueryInterface<IDXGIDevice1>();
-            dxgiDevice1.SetMaximumFrameLatency(1);
-        }
-
         _renderTarget = CreateRenderTarget(renderer.Device);
-        Log.Info($"Swap chain {width}x{height}, flip model: {IsFlipModel}, tearing: {_tearingSupported}");
+        Log.Info($"Swap chain {width}x{height}, flip model: {IsFlipModel} ({(IsFlipModel ? FlipBufferCount : 1)} buffers), tearing: {_tearingSupported}");
     }
 
     public int Width { get; private set; }
@@ -88,19 +82,14 @@ internal sealed class SwapChainPresenter : IDisposable
     public bool IsFlipModel { get; }
     public ID3D11RenderTargetView RenderTarget => _renderTarget;
 
-    /// <summary>Blocks until the swap chain can accept a new frame (about once per refresh).</summary>
-    public void WaitForNextFrame(uint timeoutMs)
-    {
-        if (_waitHandle != IntPtr.Zero)
-            Kernel32.WaitForSingleObjectEx(_waitHandle, timeoutMs, true);
-    }
-
+    /// <summary>
+    /// Presents the drawn frame without waiting for the output's refresh. With VSync, the latest
+    /// frame is shown at the next refresh (no tearing); without, at once (tearing allowed).
+    /// </summary>
     public void Present(bool vsync)
     {
-        Result result = vsync
-            ? _swapChain.Present(1, PresentFlags.None)
-            : _swapChain.Present(0, _tearingSupported ? PresentFlags.AllowTearing : PresentFlags.None);
-        result.CheckError();
+        var flags = !vsync && _tearingSupported ? PresentFlags.AllowTearing : PresentFlags.None;
+        _swapChain.Present(0, flags).CheckError();
     }
 
     public void Resize(ID3D11Device device, int width, int height)
@@ -124,7 +113,5 @@ internal sealed class SwapChainPresenter : IDisposable
     {
         _renderTarget.Dispose();
         _swapChain.Dispose();
-        if (_waitHandle != IntPtr.Zero)
-            Kernel32.CloseHandle(_waitHandle);
     }
 }
