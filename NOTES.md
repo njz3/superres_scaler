@@ -26,6 +26,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 15 | 13/11 | Relancer l'écran virtuel arrêté (code 43) ; commit et push ; répondre à Image borne et lui demander d'essayer l'écran virtuel avec les jeux Raw Thrills | ⚠️ écran détruit puis recréé (UAC), actif ; demandes 12 à 14 commitées et poussées (`a2c6933`) ; version de test autonome ; message envoyé (réception non confirmée), essai à faire côté borne |
 | 16 | 13/11 | Pas la peine d'inclure .NET 10 dans l'archive, il sera installé sur le PC | ✅ archive de test refaite au format du 26/10 (exe dépendant de .NET + `Shaders/`), 7,1 Mo, auto-test complet ; l'archive autonome est supprimée |
 | 17 | 13/11 | Publier le correctif de l'auto-test pour la borne (aperçu trop large pour un écran de 640) | ⚠️ `26d22d7` poussé, archive `g26d22d7` sans .NET (7,1 Mo), auto-test complet ici ; message envoyé à Image borne, pas revérifié sur la borne |
+| 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; pas commité, pas essayé sur une borne |
 
 ## Releases
 
@@ -146,3 +147,15 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   - La duplication marche : image de l'écran entier, mire retrouvée, session par duplication.
   - L'échec venait du test : son aperçu de 1280x240 ne tient pas sur un écran de 640, et Windows le rétrécit.
   - La largeur de l'aperçu est maintenant `SelfTest.PreviewWidth`, 560 en 640x480 (`26d22d7`, pas encore revérifié sur la borne).
+
+### Passage à .NET 8 (demande 18)
+- Les bornes ont déjà le .NET 8 Desktop Runtime : cible `net8.0-windows10.0.22621.0` pour l'exe et les tests. Aucune
+  ligne de code ne dépendait de .NET 9 ou 10, et Vortice 3.8.3 existe en .NET 8.
+- .NET 8 n'a plus de mises à jour de sécurité depuis le 10/11/2026. `RollForward` = `Major` : sans .NET 8, l'exe
+  démarre sur la version majeure suivante installée. Le journal note au démarrage la version de .NET et de Windows.
+- Seule différence trouvée : sous .NET 8, `Console.OutputEncoding` lève une IOException quand la sortie d'un WinExe
+  est redirigée (pas de console), ce qui faisait planter `--virtual-modes > fichier`. La sortie redirigée est
+  maintenant écrite en UTF-8 par un `StreamWriter` sur la sortie standard.
+- Vérifié sur ce PC : 195 tests sous .NET 8, auto-test complet de l'exe publié (normal et 1809 simulé),
+  `--virtual-modes`, `--list-modes` et `--help` redirigés et dans un tube, interface rendue hors écran.
+  Pas vérifiés : créer et détruire l'écran virtuel sous .NET 8 (UAC), et le démarrage sur .NET 10 sans .NET 8.

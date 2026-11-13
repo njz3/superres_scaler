@@ -36,9 +36,12 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
     pas de capture de fenêtre.
   - **1903** : capture d'une fenêtre (`Windows.Graphics.Capture`) ; le curseur est toujours capturé.
   - **2004** : choix du curseur, et la sortie posée sur l'écran capturé est retirée de la capture.
-  - .NET 10 ne prend en charge Windows 10 1809 qu'en édition Entreprise ou LTSC.
 - Une carte graphique Direct3D 11.
-- Pour compiler : SDK .NET 10. Pour exécuter une build non autonome : runtime .NET 10 Desktop.
+- **.NET 8 Desktop Runtime** (x64), déjà présent sur les bornes, pour une build non autonome. Si .NET 8
+  manque, l'exe démarre sur une version plus récente installée (9, 10…) : `RollForward` vaut `Major`.
+  .NET 8 n'a plus de mises à jour de sécurité depuis le 10 novembre 2026 ; il est gardé parce que les
+  bornes l'ont. Le journal indique au démarrage la version de .NET utilisée.
+- Pour compiler : SDK .NET 8 ou plus récent.
 
 ## Compilation
 
@@ -46,7 +49,13 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
 dotnet build SuperResScaler.sln -c Release
 ```
 
-L'exécutable est dans `src/SuperResScaler/bin/Release/net10.0-windows10.0.22621.0/`.
+L'exécutable est dans `src/SuperResScaler/bin/Release/net8.0-windows10.0.22621.0/`.
+
+Exe seul, dépendant du .NET 8 Desktop Runtime (format des archives pour les bornes) :
+
+```bash
+dotnet publish src/SuperResScaler -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o publish
+```
 
 Version autonome (un seul `.exe` + le dossier `Shaders`, rien à installer sur la borne) :
 

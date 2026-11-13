@@ -38,7 +38,9 @@ internal static class Program
 
         var store = SettingsStore.Load();
         Log.Initialize(store.Directory);
-        Log.Info($"SuperResScaler {typeof(Program).Assembly.GetName().Version} started, arguments: {string.Join(' ', args)}");
+        // The runtime too: built for .NET 8, the exe runs on a newer one when .NET 8 is missing (RollForward).
+        Log.Info($"SuperResScaler {typeof(Program).Assembly.GetName().Version} started on .NET {Environment.Version}, "
+                 + $"Windows {Environment.OSVersion.Version}, arguments: {string.Join(' ', args)}");
         if (store.LoadError != null)
             Log.Warn(store.LoadError);
 
@@ -105,10 +107,17 @@ internal static class Program
     /// <summary>Prints to the parent console when started from one, otherwise shows a message box.</summary>
     private static void ShowText(string text, bool error)
     {
-        // Redirected output first (as UTF-8): attaching to the console would bypass the redirection.
+        // Redirected output first: attaching to the console would bypass the redirection. Written as
+        // UTF-8 by a writer of its own: setting Console.OutputEncoding sets the console's code page,
+        // which .NET 8 refuses with an IOException when there is no console (a redirected WinExe).
         if (Kernel32.IsOutputRedirected())
-            Console.OutputEncoding = new System.Text.UTF8Encoding(false);
-        if (Kernel32.IsOutputRedirected() || Kernel32.AttachConsole(Kernel32.ATTACH_PARENT_PROCESS))
+        {
+            using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false));
+            output.WriteLine();
+            output.WriteLine(text);
+            return;
+        }
+        if (Kernel32.AttachConsole(Kernel32.ATTACH_PARENT_PROCESS))
         {
             Console.WriteLine();
             Console.WriteLine(text);
