@@ -1,7 +1,7 @@
 # Suivi des demandes et du développement
 
-Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `f50e6f6`
-(version 0.4.0, release du 13/11). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
+Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `4bbda5a`
+(version 0.4.1, release du 13/11). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
 
 Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait, non vérifié
 
@@ -31,7 +31,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 20 | 13/11 | Supprimer le dossier `g26d22d7` (exe .NET 10) resté dans `releases` | ✅ mis à la corbeille ; restent les archives 0.2.1, 0.3.0 et la version de test `ga4f623b` |
 | 21 | 13/11 | Faire une release et demander à Image borne de la déployer | ✅ 0.4.0 (`f50e6f6` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test complet sur une copie. Déployée par Image borne sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` (SHA-256 vérifié, `--help` démarre sur .NET 8.0.30) ; `settings.json` du 24/10 gardé ; 0.2.1 sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.2.1-avant-0.4.0-20261113`. Aucun lanceur n'appelle encore SuperResScaler |
 | 22 | 13/11 | Retirer des bornes le `README.md` et le `RELEASE.txt` de la 0.2.1, restés dans `C:\Racecab\Utils\superres` | 🔄 demandé à Image borne (ils restent dans la sauvegarde de la 0.2.1) ; pour la ligne « started on » du journal, `--virtual-modes` (lecture seule) : `--help` et `--list-modes` s'arrêtent avant d'ouvrir le journal |
-| 23 | 13/11 | Optimiser capture et affichage pour rester à 60 i/s quand le jeu tourne à 60 (une image de retard acceptable, pas de perte d'images) | ⚠️ boucle de rendu au rythme de la source, présentation sans attente du rafraîchissement, priorité GPU haute ; mesuré ici avec une source à 60 i/s : 59,8 sur 59,8 en duplication (57,9 avant), 59,6 en aperçu (40,6 avant) ; 195 tests, auto-tests complets ; pas commité, pas essayé sur une borne |
+| 23 | 13/11 | Optimiser capture et affichage pour rester à 60 i/s quand le jeu tourne à 60 (une image de retard acceptable, pas de perte d'images) | ⚠️ boucle de rendu au rythme de la source, présentation sans attente du rafraîchissement, priorité GPU haute ; mesuré ici avec une source à 60 i/s : 59,8 sur 59,8 en duplication (57,9 avant), 59,6 en aperçu (40,6 avant) ; 195 tests, auto-tests complets ; `4bbda5a`, pas encore essayé sur une borne |
+| 24 | 13/11 | Faire une release 0.4.1 et demander à Image borne de la déployer | ⚠️ 0.4.1 (`4bbda5a` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
 
 ## Releases
 
@@ -46,6 +47,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 12/11 | 0.3.0 | `58b34cb` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,2 Mo | 145/145 tests, auto-test 44/44 |
 | 13/11 | 0.3.0+a4f623b (test) | `a4f623b` | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.3.0-20261113-ga4f623b-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test complet sur une copie sous .NET 8.0.34, en mode normal et en mode 1809 simulé |
 | 13/11 | 0.4.0 | `f50e6f6` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.0-20261113-gf50e6f6-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, et 50 + 1 SKIP en mode 1809 simulé |
+| 13/11 | 0.4.1 | `4bbda5a` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.1-20261113-g4bbda5a-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran |
 
 Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
