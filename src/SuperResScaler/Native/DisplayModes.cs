@@ -65,6 +65,43 @@ internal static class DisplayModes
         return User32.EnumDisplaySettings(device, User32.ENUM_CURRENT_SETTINGS, ref devmode) ? ToMode(devmode) : null;
     }
 
+    /// <summary>The mode Windows saved for the display (the one a full screen game's exit sets back), null when there is none.</summary>
+    public static DisplayMode? Saved(string device)
+    {
+        var devmode = DEVMODE.Create();
+        return User32.EnumDisplaySettings(device, User32.ENUM_REGISTRY_SETTINGS, ref devmode) ? ToMode(devmode) : null;
+    }
+
+    /// <summary>Same size, scan type and frequency (±1 Hz): what Windows shows of a mode. The color depth is ignored.</summary>
+    public static bool SameMode(DisplayMode? a, DisplayMode? b)
+        => a is { } x && b is { } y && x.Width == y.Width && x.Height == y.Height && x.Interlaced == y.Interlaced
+           && Math.Abs(x.Frequency - y.Frequency) <= 1;
+
+    /// <summary>
+    /// Saves the active display configuration (the modes and layout of all displays, as on screen) in
+    /// Windows' database, for the monitors connected now, without switching. Returns 0 or a Win32 error.
+    /// Used when ChangeDisplaySettingsEx(CDS_UPDATEREGISTRY) did not save the mode.
+    /// </summary>
+    public static int SaveActiveConfiguration()
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            int error = User32.GetDisplayConfigBufferSizes(User32.QDC_ONLY_ACTIVE_PATHS, out uint pathCount, out uint modeCount);
+            if (error != 0)
+                return error;
+            var paths = new DISPLAYCONFIG_PATH_INFO[pathCount];
+            var modes = new DISPLAYCONFIG_MODE_INFO[modeCount];
+            error = User32.QueryDisplayConfig(User32.QDC_ONLY_ACTIVE_PATHS, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero);
+            if (error == User32.ERROR_INSUFFICIENT_BUFFER)
+                continue; // a display changed in between
+            if (error != 0)
+                return error;
+            return User32.SetDisplayConfig(pathCount, paths, modeCount, modes,
+                User32.SDC_APPLY | User32.SDC_USE_SUPPLIED_DISPLAY_CONFIG | User32.SDC_SAVE_TO_DATABASE | User32.SDC_ALLOW_CHANGES);
+        }
+        return User32.ERROR_INSUFFICIENT_BUFFER;
+    }
+
     /// <summary>
     /// The mode that best matches the request: same size, the requested scan type (progressive
     /// first when unspecified), the requested frequency (±1 Hz, for 59.94 Hz modes), otherwise the
@@ -144,6 +181,13 @@ internal sealed class DisplayModeChange : IDisposable
     }
 
     public DisplayMode Mode { get; }
+
+    /// <summary>Whether a scaling session of this process has switched the display temporarily.</summary>
+    public static bool IsSwitched(string device)
+    {
+        lock (Active)
+            return Active.Any(c => string.Equals(c._device, device, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>
     /// Switches <paramref name="device"/> to the mode closest to <paramref name="request"/>.

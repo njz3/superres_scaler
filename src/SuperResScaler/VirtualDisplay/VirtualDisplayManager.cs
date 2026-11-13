@@ -71,7 +71,10 @@ internal static class VirtualDisplayManager
 
     public static VirtualDisplaySettings LoadSettings() => VirtualDisplaySettings.Load(SettingsPath);
 
-    /// <summary>Creates the virtual display (UAC prompt). Its modes are those of vdd_settings.xml, written first if missing.</summary>
+    /// <summary>
+    /// Creates the virtual display (UAC prompt). Its modes are those of vdd_settings.xml, written first if missing.
+    /// The real displays keep their modes (see <see cref="RealDisplayModes"/>).
+    /// </summary>
     public static string Create()
     {
         if (GetStatus() is { DeviceInstalled: true } status)
@@ -80,15 +83,22 @@ internal static class VirtualDisplayManager
             throw new InvalidOperationException("Cet exe a été compilé sans le pilote d'écran virtuel");
         if (!File.Exists(SettingsPath))
             VirtualDisplaySettings.CreateDefault().Save(SettingsPath);
-        return RunElevated("create");
+        var kept = RealDisplayModes.Note();
+        string message = RunElevated("create");
+        return message + RealDisplayModes.SetBack(kept, virtualPresent: true);
     }
 
-    /// <summary>Destroys the virtual display (UAC prompt). vdd_settings.xml stays, for the next creation.</summary>
+    /// <summary>
+    /// Destroys the virtual display (UAC prompt). vdd_settings.xml stays, for the next creation.
+    /// The real displays keep their modes (see <see cref="RealDisplayModes"/>).
+    /// </summary>
     public static string Destroy()
     {
         if (!GetStatus().DeviceInstalled)
             return "Il n'y a pas d'écran virtuel";
-        return RunElevated("destroy");
+        var kept = RealDisplayModes.Note();
+        string message = RunElevated("destroy");
+        return message + RealDisplayModes.SetBack(kept, virtualPresent: false);
     }
 
     /// <summary>Adds modes and has the driver read them again. Returns what was done.</summary>

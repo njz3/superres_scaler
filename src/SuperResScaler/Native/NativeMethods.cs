@@ -140,7 +140,7 @@ internal struct DISPLAYCONFIG_PATH_INFO
     public uint flags;
 }
 
-/// <summary>Only its size matters here: QueryDisplayConfig fills it, nothing reads it.</summary>
+/// <summary>Only its size matters here: QueryDisplayConfig fills it, and only SetDisplayConfig reads it back.</summary>
 [StructLayout(LayoutKind.Sequential, Size = 64)]
 internal struct DISPLAYCONFIG_MODE_INFO
 {
@@ -289,6 +289,15 @@ internal static class User32
     [DllImport(Dll)]
     public static extern int QueryDisplayConfig(uint flags, ref uint pathCount, [Out] DISPLAYCONFIG_PATH_INFO[] paths,
         ref uint modeCount, [Out] DISPLAYCONFIG_MODE_INFO[] modes, IntPtr currentTopologyId);
+    public const uint SDC_USE_SUPPLIED_DISPLAY_CONFIG = 0x00000020;
+    public const uint SDC_APPLY = 0x00000080;
+    public const uint SDC_SAVE_TO_DATABASE = 0x00000200;
+    public const uint SDC_ALLOW_CHANGES = 0x00000400;
+    public const int ERROR_INSUFFICIENT_BUFFER = 122;
+
+    [DllImport(Dll)]
+    public static extern int SetDisplayConfig(uint pathCount, DISPLAYCONFIG_PATH_INFO[] paths,
+        uint modeCount, DISPLAYCONFIG_MODE_INFO[] modes, uint flags);
     [DllImport(Dll, EntryPoint = "DisplayConfigGetDeviceInfo")] public static extern int DisplayConfigGetSourceName(ref DISPLAYCONFIG_SOURCE_DEVICE_NAME info);
     [DllImport(Dll, EntryPoint = "DisplayConfigGetDeviceInfo")] public static extern int DisplayConfigGetTargetName(ref DISPLAYCONFIG_TARGET_DEVICE_NAME info);
     [DllImport(Dll, CharSet = CharSet.Unicode)] public static extern bool EnumDisplayDevices(string device, uint index, ref DISPLAY_DEVICE info, uint flags);
@@ -315,6 +324,8 @@ internal static class User32
     [DllImport(Dll)] public static extern IntPtr DispatchMessage(ref MSG msg);
 
     public const int ENUM_CURRENT_SETTINGS = -1;
+    /// <summary>The mode Windows saved for the display, in the configuration of the monitors connected now.</summary>
+    public const int ENUM_REGISTRY_SETTINGS = -2;
     public const uint DM_BITSPERPEL = 0x00040000;
     public const uint DM_PELSWIDTH = 0x00080000;
     public const uint DM_PELSHEIGHT = 0x00100000;

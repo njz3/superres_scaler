@@ -213,6 +213,17 @@ exemple un 1024x384 à 60 Hz que les bornes n'ont pas. Windows arrondit les fré
 apparaît en 58 (`SetResolution -f 58`). Chaque relecture des modes donne un nouveau `\\.\DISPLAYn`
 à l'écran virtuel ; les profils, qui gardent l'identifiant du moniteur, n'en sont pas gênés.
 
+**Créer et détruire gardent le mode des vrais écrans.** Windows garde une configuration d'affichage
+par ensemble d'écrans branchés (« PHL + écran virtuel », « PHL seul ») et l'applique dès qu'un écran
+apparaît ou disparaît : sans rien faire, détruire l'écran virtuel remettrait le PHL dans le mode
+enregistré la dernière fois qu'il était seul, ou dans son mode natif (1920x1080 sur les bornes).
+SuperResScaler note donc le mode de chaque vrai écran avant, attend que Windows ait fini (l'écran
+virtuel apparu ou disparu, puis plus aucun changement pendant une seconde, 15 s au plus), remet ceux
+qu'il a changés et les enregistre pour le nouvel ensemble d'écrans ; le message le dit (« Windows
+avait mis PHL en 1920x1080@60 : remis en 640x480@60 »). Un écran qu'une mise à l'échelle a basculé
+temporairement est laissé à celle-ci. La relecture des modes, qui fait disparaître l'écran virtuel
+un instant, n'est pas concernée.
+
 **Relire les modes relance le pilote.** Pour relire ses modes, le pilote arrête son propre processus :
 Windows y voit un plantage et le relance. Une mise à l'échelle de l'écran virtuel s'arrête alors,
 avec les deux méthodes de capture (sur le PC de développement, la carte NVIDIA qui rend l'écran
@@ -477,7 +488,8 @@ src/SuperResScaler/
   Engine/Geometry.cs          zone source, placement (formats du linuxloader, barillet)
   Native/DisplayModes.cs      modes d'affichage, changement et retour à la résolution d'origine
   Native/SetupApi.cs          création et suppression d'un périphérique racine (comme devcon)
-  VirtualDisplay/             écran virtuel : pilote embarqué, création/destruction élevée, modes
+  VirtualDisplay/             écran virtuel : pilote embarqué, création/destruction élevée, modes,
+                              modes des vrais écrans gardés à la création et à la destruction
   VirtualDisplayDriver/       pilote Virtual Display Driver signé, embarqué dans l'exe (SOURCE.txt)
   Engine/BlackBarDetector.cs  détection des bandes noires
   Engine/CaptureStatistics.cs images capturées par seconde et leur âge, dans le journal

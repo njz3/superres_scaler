@@ -32,7 +32,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 21 | 13/11 | Faire une release et demander à Image borne de la déployer | ✅ 0.4.0 (`f50e6f6` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test complet sur une copie. Déployée par Image borne sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` (SHA-256 vérifié, `--help` démarre sur .NET 8.0.30) ; `settings.json` du 24/10 gardé ; 0.2.1 sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.2.1-avant-0.4.0-20261113`. Aucun lanceur n'appelle encore SuperResScaler |
 | 22 | 13/11 | Retirer des bornes le `README.md` et le `RELEASE.txt` de la 0.2.1, restés dans `C:\Racecab\Utils\superres` | 🔄 demandé à Image borne (ils restent dans la sauvegarde de la 0.2.1) ; pour la ligne « started on » du journal, `--virtual-modes` (lecture seule) : `--help` et `--list-modes` s'arrêtent avant d'ouvrir le journal |
 | 23 | 13/11 | Optimiser capture et affichage pour rester à 60 i/s quand le jeu tourne à 60 (une image de retard acceptable, pas de perte d'images) | ⚠️ boucle de rendu au rythme de la source, présentation sans attente du rafraîchissement, priorité GPU haute ; mesuré ici avec une source à 60 i/s : 59,8 sur 59,8 en duplication (57,9 avant), 59,6 en aperçu (40,6 avant) ; 195 tests, auto-tests complets ; `4bbda5a`, pas encore essayé sur une borne |
-| 24 | 13/11 | Faire une release 0.4.1 et demander à Image borne de la déployer | ⚠️ 0.4.1 (`4bbda5a` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
+| 24 | 13/11 | Faire une release 0.4.1 et demander à Image borne de la déployer | ✅ déployée sur les deux bornes, 60 i/s sans perte en démo ; en course, pertes sous charge GPU (journal) ; 0.4.1 (`4bbda5a` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
+| 25 | 13/11 | Sur les bornes, détruire l'écran virtuel a mis le PHL en 1920x1080 : pourquoi ? Puis : que « Détruire » remette les autres écrans dans leur mode d'avant | ⚠️ cause : Windows applique la configuration qu'il garde pour « PHL seul » ; « Créer » et « Détruire » notent le mode des vrais écrans, puis le remettent et l'enregistrent ; 197 tests ; essayé ici dans les deux sens (UAC), pas sur une borne ; pas commité |
 
 ## Releases
 
@@ -218,3 +219,42 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 - Après : 59,8 sur 59,8 en duplication 640x480, 59,3 sur 59,6 en 1920x1080, 59,6 en aperçu ; âge moyen < 0,5 ms.
   WGC : Windows ne livre que 53 images/s sur ce portable à deux cartes, toutes prises.
 - `Time` et `FrameCount` des shaders n'avancent plus qu'à chaque nouvelle image (aucun shader livré ne s'en sert).
+
+### 0.4.1 sur les bornes (13/11)
+- Déployée par Image borne sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` (SHA-256 vérifié, « started on
+  .NET 8.0.30, Windows 10.0.17763.0 »), 0.4.0 sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.4.0-avant-0.4.1-20261113`.
+  Le journal confirme « GPU scheduling priority: high ».
+- Relevés (source / prises / jamais affichées, par seconde) :
+  - en démo, 60 sans perte : Nicktoons Nitro, FNF SuperBikes, FNF et Dirty Drivin (59,6 à 60) ; FNF Drift 0,3 à
+    0,8 perdues ; FNF SuperCars jusqu'à 5. Les « 40 images/s » de la 0.4.0 venaient donc de la capture.
+  - En course, sous charge GPU :
+    - FNF SuperBikes : source 47 à 55, prises 24 à 41, perdues 9 à 29 ;
+    - Nicktoons Nitro : perdues 6 à 10 ;
+    - FNF : perdues 1 à 7 ;
+    - FNF SuperCars : perdues 0 à 3, mais le jeu lui-même descend à 19-40.
+    - Âge à la prise jusqu'à 33 ms : la boucle de rendu est retardée d'environ deux images.
+- Cause probable : la copie et le dessin de SuperResScaler, petits, attendent derrière le jeu sur la GTX 1050 Ti ;
+  la présentation (latence GPU de 1 image) bloque la boucle, et les images suivantes de l'écran virtuel passent.
+  La priorité GPU « high » ne suffit pas.
+- Sans rapport : FNF plante (sdaemon 0xc0000005) quand il reçoit Alt+F4 ; FNF SuperBikes 2 a planté seul.
+
+### Mode des vrais écrans à la création et à la destruction (demande 25)
+- Constat du propriétaire sur les deux bornes : après la destruction de l'écran virtuel, le PHL est en 1920x1080.
+- « Détruire » ne faisait que retirer le périphérique. Windows garde une configuration par ensemble d'écrans
+  branchés (« PHL + écran virtuel », « PHL seul ») et l'applique dès qu'un écran apparaît ou disparaît : un mode
+  réglé pendant que l'écran virtuel existe va dans la première, la destruction applique la seconde (dernier mode
+  enregistré du PHL seul, ou son mode natif). Laquelle a donné 1920x1080 sur les bornes n'a pas été relevé
+  (`SetResolution CURRENT`, valeur `registry=`).
+- Correction (`VirtualDisplay/RealDisplayModes.cs`) : avant « Créer » et « Détruire », le mode de chaque vrai
+  écran est noté ; après, attente que l'écran virtuel soit apparu ou parti et que plus rien ne change pendant 1 s
+  (15 s au plus) ; les écrans changés sont remis (`CDS_UPDATEREGISTRY`, sinon `SetDisplayConfig` avec
+  `SDC_SAVE_TO_DATABASE`) et le message le dit. Un écran basculé temporairement par une mise à l'échelle est laissé
+  à celle-ci. La relecture des modes n'est pas concernée.
+- Essai sur ce PC, avec l'écran du portable à 48 Hz enregistré avec l'écran virtuel et 60 Hz sans :
+  - destruction : « Windows avait mis Dell INSPIRON AUO9F91 Display en 3072x1920@60 : remis en 3072x1920@48 »,
+    mode enregistré ensuite 48 ;
+  - création : « Windows avait mis … en 3072x1920@48 : remis en 3072x1920@60 », mode enregistré ensuite 60 ;
+  - environ 4,5 s d'attente après l'action élevée ; le PHL 325E1 n'a pas bougé. Le portable est revenu à 60 Hz,
+    l'écran virtuel est recréé (`\\.\DISPLAY18`, 640x480).
+- Pour les bornes, d'ici une nouvelle version : régler le PHL après la destruction, par exemple
+  `SetResolution RESTORE -noprompt` (mode du fichier témoin, enregistré) ; les lanceurs TP le font après chaque jeu.

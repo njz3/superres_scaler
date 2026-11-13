@@ -237,4 +237,39 @@ public class VirtualDisplayTests
         Assert.True(display.DisplayOnly);
         Assert.Equal("virtuel", display.Display);
     }
+
+    [Fact]
+    public void FindsTheRealDisplaysWindowsSwitched()
+    {
+        const string Phl = @"\\?\DISPLAY#PHLC0D1#4&2b5f1b5&0&UID4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string Dell = @"\\?\DISPLAY#DEL40F4#5&1&UID4354#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string Gone = @"\\?\DISPLAY#GSM5B7F#5&1&UID4355#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        var vga = new DisplayMode(640, 480, 60, 32, false);
+        var fullHd = new DisplayMode(1920, 1080, 60, 32, false);
+        KeptMode phl = new(Phl, "PHL 243V7", vga), dell = new(Dell, "DELL U2415", fullHd), gone = new(Gone, "LG", vga);
+        var now = new Dictionary<string, DisplayMode>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Phl.ToUpperInvariant()] = fullHd,             // switched by Windows: set back
+            [Dell] = fullHd with { Frequency = 59 },       // 59.94 Hz shown as 59: the same mode
+        };
+
+        var changed = Assert.Single(RealDisplayModes.FindChanged([phl, dell, gone], now));
+        Assert.Equal(new ChangedMode(phl, fullHd), changed);
+
+        Assert.Equal("Windows avait mis PHL 243V7 en 1920x1080@60 : remis en 640x480@60",
+            RealDisplayModes.Report(changed, done: true, saved: true));
+        Assert.EndsWith("mais Windows ne l'a pas enregistré", RealDisplayModes.Report(changed, done: true, saved: false));
+        Assert.Equal("Windows avait mis PHL 243V7 en 1920x1080@60 : retour en 640x480@60 impossible (mode non supporté)",
+            RealDisplayModes.Report(changed, done: false, saved: false, "mode non supporté"));
+    }
+
+    [Fact]
+    public void ComparesModesAsWindowsShowsThem()
+    {
+        var mode = new DisplayMode(1280, 480, 60, 32, true);
+        Assert.True(DisplayModes.SameMode(mode, mode with { BitsPerPixel = 16, Frequency = 59 }));
+        Assert.False(DisplayModes.SameMode(mode, mode with { Interlaced = false }));
+        Assert.False(DisplayModes.SameMode(mode, mode with { Frequency = 57 }));
+        Assert.False(DisplayModes.SameMode(mode, null));
+    }
 }
