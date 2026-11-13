@@ -1,7 +1,7 @@
 # Suivi des demandes et du développement
 
-Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `58b34cb`
-(version 0.3.0). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
+Dépôt `superres_scaler` (https://github.com/njz3/superres_scaler.git), branche `main`, à jour sur `a2c6933`
+(version 0.3.0, plus la version de test du 13/11). Identité git locale : `Benjamin <benjamin.maurin@gmail.com>`.
 
 Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait, non vérifié
 
@@ -23,6 +23,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 12 | 13/11 | Écran virtuel dans SuperResScaler : créer, détruire, ajouter des modes, le capturer et l'afficher sur un autre écran avec shader, ratio… ; pilote embarqué dans l'exe | ⚠️ fait : 168 tests ; sur ce PC, créer/détruire (UAC), ajout/retrait de modes à chaud, capture suivant 640x480 → 1280x240 → 1024x384 ; pas essayé sur une borne |
 | 13 | 13/11 | Vignette de l'écran virtuel en haut à droite, rafraîchie toutes les 0,5 s ; coût et retard de la capture ; un jeu TeknoParrot en 1920x1080 sur l'écran virtuel, affiché en 1280x240 sur le CRT ? | ⚠️ vignette faite et mesurée sur ce PC (177 tests), statistiques de capture dans le journal ; jeu TeknoParrot pas essayé |
 | 14 | 13/11 | Capture par duplication de bureau pour Windows 10 1809 (écran virtuel des bornes), et choix de la méthode de capture sur un Windows plus récent | ⚠️ fait : 192 tests, auto-test complet ici et en mode 1809 simulé (`SUPERRESSCALER_NO_WGC=1`) ; pas essayé sur une vraie 1809 |
+| 15 | 13/11 | Relancer l'écran virtuel arrêté (code 43) ; commit et push ; répondre à Image borne et lui demander d'essayer l'écran virtuel avec les jeux Raw Thrills | ⚠️ écran détruit puis recréé (UAC), actif ; demandes 12 à 14 commitées et poussées (`a2c6933`) ; version de test autonome ; message envoyé (réception non confirmée), essai à faire côté borne |
 
 ## Releases
 
@@ -35,6 +36,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 26/10 | 0.2.1 | `2f76561` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,6 Mo | 100/100 tests, auto-test 25/25 |
 | 10/11 | 0.3.0 | `2230d17` | autonome (runtime embarqué), sur l'autre PC dans `emulateurs\releases` | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,7 Mo | 145/145 tests, auto-test 40/44 (demande 9) |
 | 12/11 | 0.3.0 | `58b34cb` | dépend du .NET 10 Desktop Runtime | exe, `Shaders/` | 7,2 Mo | 145/145 tests, auto-test 44/44 |
+| 13/11 | 0.3.0+a2c6933 (test) | `a2c6933` | autonome (runtime embarqué), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.3.0-20261113-ga2c6933-njz3-windows-x64.zip`) | exe, `Shaders/`, `settings.json`, `README.md`, `RELEASE.txt` | 50,6 Mo | 192/192 tests ; auto-test complet sur une copie, en mode normal et en mode 1809 simulé |
 
 L'archive du 10/11 suit un autre nom (`superres-scaler-0.3.0-20261110-g2230d17-njz3-windows-x64.zip`, avec un
 dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer » : faux pour l'archive du 12/11.
