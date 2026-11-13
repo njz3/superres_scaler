@@ -25,9 +25,10 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 14 | 13/11 | Capture par duplication de bureau pour Windows 10 1809 (écran virtuel des bornes), et choix de la méthode de capture sur un Windows plus récent | ⚠️ fait : 192 tests, auto-test complet ici et en mode 1809 simulé (`SUPERRESSCALER_NO_WGC=1`) ; pas essayé sur une vraie 1809 |
 | 15 | 13/11 | Relancer l'écran virtuel arrêté (code 43) ; commit et push ; répondre à Image borne et lui demander d'essayer l'écran virtuel avec les jeux Raw Thrills | ⚠️ écran détruit puis recréé (UAC), actif ; demandes 12 à 14 commitées et poussées (`a2c6933`) ; version de test autonome ; message envoyé (réception non confirmée), essai à faire côté borne |
 | 16 | 13/11 | Pas la peine d'inclure .NET 10 dans l'archive, il sera installé sur le PC | ✅ archive de test refaite au format du 26/10 (exe dépendant de .NET + `Shaders/`), 7,1 Mo, auto-test complet ; l'archive autonome est supprimée |
-| 17 | 13/11 | Publier le correctif de l'auto-test pour la borne (aperçu trop large pour un écran de 640) | ⚠️ `26d22d7` poussé, archive `g26d22d7` sans .NET (7,1 Mo), auto-test complet ici ; message envoyé à Image borne, pas revérifié sur la borne |
-| 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; pas essayé sur une borne |
-| 19 | 13/11 | Publier la version .NET 8 pour la borne | ⚠️ `a4f623b` poussé, archive `ga4f623b` (7,4 Mo), auto-test complet ici sous .NET 8 ; Image borne prévenue de ne pas installer l'exe `26d22d7` (.NET 10), réception non confirmée |
+| 17 | 13/11 | Publier le correctif de l'auto-test pour la borne (aperçu trop large pour un écran de 640) | ✅ `26d22d7` poussé ; vérifié sur Racecab1 avec la version .NET 8 (`a4f623b`) : aperçu de 560x240, contrôle passé |
+| 18 | 13/11 | Passer en .NET 8 : les bornes l'ont déjà | ⚠️ fait : `net8.0-windows10.0.22621.0` et `RollForward` `Major` ; 195 tests, auto-test complet de l'exe (normal et 1809 simulé), interface rendue sous .NET 8.0.34 ; sortie console corrigée ; auto-test complet sur Racecab1 sous .NET 8.0.30 (demande 19) |
+| 19 | 13/11 | Publier la version .NET 8 pour la borne | ✅ `a4f623b` poussé, archive `ga4f623b` (7,4 Mo). Sur Racecab1 (1809, .NET 8.0.30 déjà installé), d'après Image borne : auto-test 42 PASS, 1 SKIP, « ALL TESTS PASSED ». Écran virtuel et jeux Raw Thrills à essayer |
+| 20 | 13/11 | Supprimer le dossier `g26d22d7` (exe .NET 10) resté dans `releases` | ✅ mis à la corbeille ; restent les archives 0.2.1, 0.3.0 et la version de test `ga4f623b` |
 
 ## Releases
 
@@ -47,8 +48,9 @@ Le 13/11, cette version de test a connu quatre archives :
 - une archive dépendante de .NET 10 (`be4d81b`), faite quand .NET 10 était prévu sur les bornes (demande 16) ;
 - une archive dépendante de .NET 10 (`26d22d7`), avec la largeur d'aperçu de l'auto-test (demande 17) ;
 - celle-ci, en .NET 8, que les bornes ont déjà (demandes 18 et 19).
-Les trois premières sont supprimées. Un dossier extrait de l'archive `26d22d7` est resté dans `emulateurs\releases`,
-créé par une autre session à 09:39 : son exe vise .NET 10 et ne démarre pas sur une borne qui n'a que .NET 8.
+Les trois premières sont supprimées. Un dossier extrait de l'archive `26d22d7` était apparu dans `emulateurs\releases`
+à 09:39, créé ni par cette session ni par Image borne. Son exe vise .NET 10, qui manque aux bornes : il a été mis à
+la corbeille de Windows, à la demande de l'utilisateur (demande 20).
 
 L'archive du 10/11 suit un autre nom (`superres-scaler-0.3.0-20261110-g2230d17-njz3-windows-x64.zip`, avec un
 dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer » : faux pour l'archive du 12/11.
@@ -162,3 +164,6 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 - Vérifié sur ce PC : 195 tests sous .NET 8, auto-test complet de l'exe publié (normal et 1809 simulé),
   `--virtual-modes`, `--list-modes` et `--help` redirigés et dans un tube, interface rendue hors écran.
   Pas vérifiés : créer et détruire l'écran virtuel sous .NET 8 (UAC), et le démarrage sur .NET 10 sans .NET 8.
+- Racecab1, d'après Image borne : « started on .NET 8.0.30, Windows 10.0.17763.0 », auto-test 42 PASS, 1 SKIP
+  (sessions sur une fenêtre), « ALL TESTS PASSED ». La session par duplication s'affiche en 560x240 sur le PHL en
+  640x480. Les bornes ont le .NET 8.0.30 Desktop Runtime : rien à installer.
