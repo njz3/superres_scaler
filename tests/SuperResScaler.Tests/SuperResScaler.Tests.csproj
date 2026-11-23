@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SuperResScaler\SuperResScaler.csproj" />
+    <ProjectReference Include="..\..\src\SuperResScaler.csproj" />
   </ItemGroup>
 
 </Project>

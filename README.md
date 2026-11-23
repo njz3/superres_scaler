@@ -54,18 +54,18 @@ fenêtre du jeu ──► Windows.Graphics.Capture ──► texture D3D11 ─�
 dotnet build SuperResScaler.sln -c Release
 ```
 
-L'exécutable est dans `src/SuperResScaler/bin/Release/net8.0-windows10.0.22621.0/`.
+L'exécutable est dans `src/bin/Release/net8.0-windows10.0.22621.0/`.
 
 Exe seul, dépendant du .NET 8 Desktop Runtime (format des archives pour les bornes) :
 
 ```bash
-dotnet publish src/SuperResScaler -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o publish
+dotnet publish src -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o publish
 ```
 
 Version autonome (un seul `.exe` + le dossier `Shaders`, rien à installer sur la borne) :
 
 ```bash
-dotnet publish src/SuperResScaler -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+dotnet publish src -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
 ## Utilisation
@@ -236,7 +236,7 @@ Le pilote est [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual
 25.7.23 (licence MIT, signé par SignPath Foundation), **intégré à l'exe** sans modification : rien
 d'autre à livrer. À la création, ses fichiers sont écrits dans un dossier temporaire après
 vérification de leur SHA-256, installés, puis effacés : Windows en garde sa copie. Les originaux et
-leur provenance sont dans `src/SuperResScaler/VirtualDisplayDriver/` (`SOURCE.txt`) ; leurs octets
+leur provenance sont dans `src/VirtualDisplayDriver/` (`SOURCE.txt`) ; leurs octets
 ne doivent pas changer, le catalogue signé couvre l'INF à l'octet près (d'où le `.gitattributes`).
 Détruire l'écran laisse le pilote dans le magasin de pilotes de Windows ; pour l'en retirer aussi
 (en administrateur) : `pnputil /enum-drivers` pour trouver le `oemNN.inf` de `mttvdd.inf`, puis
@@ -413,7 +413,7 @@ Les réglages absents d'un profil prennent leur valeur par défaut.
 | **CatmullRom** | bicubique, pour la 3D / la vidéo |
 | **Lanczos3** | le plus net des filtres lissés, pour la 3D |
 
-Pour écrire son propre shader, voir [Shaders/README.md](src/SuperResScaler/Shaders/README.md).
+Pour écrire son propre shader, voir [Shaders/README.md](src/Shaders/README.md).
 
 ## Tests
 
@@ -476,7 +476,7 @@ sessions sur une fenêtre sont sautées (`SKIP`). Résultats dans `selftest.txt`
 ## Organisation du code
 
 ```
-src/SuperResScaler/
+src/                          projet SuperResScaler (SuperResScaler.csproj)
   Program.cs                  point d'entrée (interface, ligne de commande, auto-test)
   App/ScalerController.cs     démarrage/arrêt, raccourcis, démarrage auto des profils
   App/HeadlessContext.cs      mode ligne de commande
