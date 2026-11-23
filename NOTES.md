@@ -40,6 +40,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 29 | 20/11 | Résolutions disponibles sur l'écran virtuel | ✅ 10 modes dans `vdd_settings.xml` ; l'écran virtuel n'existe plus sur ce PC (pas retiré par cette session) |
 | 30 | 20/11 | Patcher les pilotes NVIDIA récents pour sortir de l'entrelacé ? | ✅ réponse : sur Pascal, entrelacé jusqu'au pilote 537.58 (rapport d'utilisateur, forum NVIDIA) ; patcher `nvlddmkm.sys` casse sa signature ; Turing et suivants : pas d'entrelacé sous Windows. Image borne : pilote 582.66 sur les deux bornes, PHL débranché, écran virtuel seul écran actif (1920x240) |
 | 31 | 23/11 | Ajouter 1024x384 et 512x384 à 60 Hz à l'écran virtuel | ✅ ajoutés au `vdd_settings.xml` de ce PC (12 modes), pris en compte à la prochaine création ; bornes non modifiées |
+| 32 | 23/11 | Commit, push et release (sans changement de code, au choix de l'utilisateur) | ✅ `4ee9df0` poussé ; 0.4.3 (`4ee9df0` + numéro de version), même code que la 0.4.2, 7,4 Mo ; 197 tests, auto-tests sur une copie ; pas de déploiement demandé |
 
 ## Releases
 
@@ -56,6 +57,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 13/11 | 0.4.0 | `f50e6f6` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.0-20261113-gf50e6f6-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, et 50 + 1 SKIP en mode 1809 simulé |
 | 13/11 | 0.4.1 | `4bbda5a` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.1-20261113-g4bbda5a-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran |
 | 13/11 | 0.4.2 | `6af3747` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.2-20261113-g6af3747-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran ; SHA-256 de l'exe `CFF1529F4CF31EF81D9F685C228FBEC9EA8932DD6F66C28B83EB3C81910080A7` |
+| 23/11 | 0.4.3 | `4ee9df0` + numéro de version (même code que la 0.4.2) | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.3-20261123-g4ee9df0-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34, sans écran virtuel sur ce PC : 56/56, 46 + 1 SKIP en mode 1809 simulé, 58/58 avec le plein écran (voir le journal) ; SHA-256 de l'exe `BEBB7917C2ACED106DC65EBBE677C28D58F0101B5198FC83E0F0F33751F550C3` |
 
 Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
@@ -288,3 +290,12 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   Cruis'n Blast vers 31/s au plus). Sans lui, ils prennent leur propre mode sur le PHL (Snow Cross en 1366x768) et
   `SetResolution RESTORE` remet 640x480 à la sortie. Image borne essaie les 11 Raw Thrills ainsi.
 - Si l'écran virtuel revient sur les bornes pour SuperResScaler, revérifier d'abord Cars et Snow Cross.
+
+### Release 0.4.3 (23/11)
+- Même code que la 0.4.2 : seuls le numéro de version et NOTES.md changent (choix de l'utilisateur).
+- Auto-test de la copie : premiers passages en échec sur les seules vérifications qui lisent l'écran (barres de la
+  mire lues blanches, #FAFAFA à #FFFFFF) : 51/56, et 27 + 19 échecs en 1809 simulé. Contrôle avec l'exe de la 0.4.2,
+  lancé en alternance : il a échoué de la même façon une fois, puis réussi ; la 0.4.3 a ensuite réussi deux fois de
+  suite. Cause : ce qui était à l'écran à ce moment-là (PC en cours d'utilisation), pas la version.
+- Résultats retenus : 56/56, 46 + 1 SKIP en 1809 simulé, 58/58 avec le plein écran. Moins de tests qu'avec la 0.4.2
+  (60, 50, 62) : ce PC n'a plus d'écran virtuel.
