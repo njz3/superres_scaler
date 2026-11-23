@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using SuperResScaler.Capture;
 using SuperResScaler.Config;
+using SuperResScaler.Engine;
 using SuperResScaler.Native;
 using SuperResScaler.VirtualDisplay;
 
@@ -34,9 +35,9 @@ internal sealed partial class CommandLineOptions
           --shader <nom>             Area, Nearest, SharpBilinear, LinearX_NearestY, Bilinear...
           --mode stretch|aspect      plein écran étiré / au ratio avec bandes noires
                                      (fullscreen_stretch / fullscreen acceptés)
-          --aspect <format>          comme ASPECT_RATIO du linuxloader : original (forme de
-                                     la fenêtre), 4:3 / 16:9 / 4:3_letterbox (image entière à
-                                     sa forme), 4:3_stretch (déformée), 4:3_crop (rognée)
+          --aspect <format>          original (forme de la fenêtre), 4:3 / 16:9 /
+                                     4:3_letterbox (image entière à sa forme),
+                                     4:3_stretch (déformée), 4:3_crop (rognée)
           --crop-position <n>        _crop : partie gardée, -100 gauche/haut … 0 … 100
           --barrel                   _crop : courbe les bords au lieu de les couper
           --barrel-center <%>        milieu non déformé (défaut 60)
@@ -44,7 +45,15 @@ internal sealed partial class CommandLineOptions
           --mirror-x                 miroir gauche/droite (projecteur derrière un écran)
           --mirror-y                 miroir haut/bas (projecteur par le dessus)
           --display-aspect auto|4:3  forme physique de l'écran (auto : 4:3 en super-résolution)
-          --crop g,h,d,b             recadrage manuel en pixels
+          --crop g,h,d,b             recadrage : pixels retirés de chaque côté ; négatif =
+                                     noir ajouté de ce côté (dézoom)
+          --frame g,h,d,b            recadrage par les coins du cadre, en % de l'image
+                                     (-50 à 150, décimales avec un point)
+          --zoom <%>[,<%>]           recadrage par un zoom (50 à 800 ; deux valeurs : largeur
+                                     puis hauteur), centré sauf avec --zoom-center
+          --zoom-center x,y          centre du zoom en % de l'image (50,50 par défaut)
+          --interlace                entrelacement simulé : lignes paires puis impaires de la
+                                     source, une trame par rafraîchissement
           --autocrop                 recadrage automatique des bandes noires
           --window                   capture la fenêtre entière (pas seulement la zone client)
           --cursor                   capture le curseur
@@ -220,10 +229,30 @@ internal sealed partial class CommandLineOptions
                 case "--crop":
                 {
                     int[] c = ParseCrop(Value());
-                    o._overrides.Add(s => { s.CropLeft = c[0]; s.CropTop = c[1]; s.CropRight = c[2]; s.CropBottom = c[3]; });
+                    o._overrides.Add(s => { s.FrameMode = FrameMode.Margins; s.CropLeft = c[0]; s.CropTop = c[1]; s.CropRight = c[2]; s.CropBottom = c[3]; });
+                    break;
+                }
+                case "--frame":
+                {
+                    double[] f = ParseList(arg, Value(), 4, Geometry.MinFramePercent, Geometry.MaxFramePercent);
+                    o._overrides.Add(s => { s.FrameMode = FrameMode.Corners; s.FrameLeft = f[0]; s.FrameTop = f[1]; s.FrameRight = f[2]; s.FrameBottom = f[3]; });
+                    break;
+                }
+                case "--zoom":
+                {
+                    string v = Value();
+                    double[] z = ParseList(arg, v, v.IndexOfAny([',', ';']) >= 0 ? 2 : 1, Geometry.MinZoom, Geometry.MaxZoom);
+                    o._overrides.Add(s => { s.FrameMode = FrameMode.Zoom; s.ZoomX = z[0]; s.ZoomY = z[^1]; s.ZoomLinked = z.Length == 1; });
+                    break;
+                }
+                case "--zoom-center":
+                {
+                    double[] c = ParseList(arg, Value(), 2, Geometry.MinFramePercent, Geometry.MaxFramePercent);
+                    o._overrides.Add(s => { s.FrameMode = FrameMode.Zoom; s.ZoomCenterX = c[0]; s.ZoomCenterY = c[1]; });
                     break;
                 }
                 case "--autocrop": o._overrides.Add(s => s.AutoCrop = true); break;
+                case "--interlace": o._overrides.Add(s => s.SimulatedInterlace = true); break;
                 case "--window": o._overrides.Add(s => s.ClientAreaOnly = false); break;
                 case "--cursor": o._overrides.Add(s => s.CaptureCursor = true); break;
                 case "--no-vsync": o._overrides.Add(s => s.VSync = false); break;
@@ -338,12 +367,29 @@ internal sealed partial class CommandLineOptions
         throw new ArgumentException($"Handle invalide : {value}");
     }
 
+    /// <summary>"g,h,d,b" in pixels; negative values add black on that side.</summary>
     private static int[] ParseCrop(string value)
     {
         var parts = value.Split(',', ';');
-        if (parts.Length != 4 || !parts.All(p => int.TryParse(p.Trim(), out int n) && n >= 0))
-            throw new ArgumentException($"Recadrage invalide : {value} (attendu gauche,haut,droite,bas)");
+        if (parts.Length != 4 || !parts.All(p => int.TryParse(p.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out _)))
+            throw new ArgumentException($"Recadrage invalide : {value} (attendu gauche,haut,droite,bas en pixels)");
         return parts.Select(p => int.Parse(p.Trim(), CultureInfo.InvariantCulture)).ToArray();
+    }
+
+    /// <summary><paramref name="count"/> numbers separated by ',' or ';' (decimals with a point), each within the range.</summary>
+    private static double[] ParseList(string name, string value, int count, double min, double max)
+    {
+        var parts = value.Split(',', ';');
+        var numbers = new double[parts.Length];
+        bool valid = parts.Length == count;
+        for (int i = 0; valid && i < parts.Length; i++)
+        {
+            valid = double.TryParse(parts[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[i])
+                    && numbers[i] >= min && numbers[i] <= max;
+        }
+        return valid
+            ? numbers
+            : throw new ArgumentException($"Valeur invalide pour {name} : {value} ({count} nombre(s) de {min} à {max}, séparés par des virgules)");
     }
 
     [GeneratedRegex("^(\\d+)x(\\d+)$", RegexOptions.IgnoreCase)]

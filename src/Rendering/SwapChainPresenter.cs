@@ -23,6 +23,9 @@ internal sealed class SwapChainPresenter : IDisposable
     private readonly bool _tearingSupported;
     private readonly SwapChainFlags _flags;
     private ID3D11RenderTargetView _renderTarget;
+    private IDXGIOutput? _output;
+    private bool _vblankUnavailable;
+    private long _lastTimedRefresh;
 
     public SwapChainPresenter(Renderer renderer, IntPtr hwnd, int width, int height)
     {
@@ -92,8 +95,45 @@ internal sealed class SwapChainPresenter : IDisposable
         _swapChain.Present(0, flags).CheckError();
     }
 
+    /// <summary>
+    /// Waits for the next refresh of the display that shows the swap chain: simulated interlacing
+    /// presents one field per refresh, also without a new captured frame. Where DXGI cannot wait
+    /// for it (a display of another graphics card), waits a 60 Hz period instead.
+    /// </summary>
+    public void WaitForVerticalBlank()
+    {
+        if (!_vblankUnavailable)
+        {
+            try
+            {
+                _output ??= _swapChain.GetContainingOutput();
+                _output.WaitForVBlank(); // throws when DXGI cannot wait for this display
+                return;
+            }
+            catch (SharpGenException ex)
+            {
+                Log.Warn($"Cannot wait for the output's refresh ({ex.ResultCode}): a 60 Hz timer paces the simulated interlacing");
+                _output?.Dispose();
+                _output = null;
+                _vblankUnavailable = true;
+            }
+        }
+
+        long period = System.Diagnostics.Stopwatch.Frequency / 60;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long next = Math.Max(_lastTimedRefresh + period, now);
+        int milliseconds = (int)((next - now) * 1000 / System.Diagnostics.Stopwatch.Frequency);
+        if (milliseconds > 2)
+            Thread.Sleep(milliseconds - 2);
+        while (System.Diagnostics.Stopwatch.GetTimestamp() < next)
+            Thread.SpinWait(100);
+        _lastTimedRefresh = next;
+    }
+
     public void Resize(ID3D11Device device, int width, int height)
     {
+        _output?.Dispose(); // the overlay may now be on another display
+        _output = null;
         if (width == Width && height == Height)
             return;
         _renderTarget.Dispose();
@@ -111,6 +151,7 @@ internal sealed class SwapChainPresenter : IDisposable
 
     public void Dispose()
     {
+        _output?.Dispose();
         _renderTarget.Dispose();
         _swapChain.Dispose();
     }

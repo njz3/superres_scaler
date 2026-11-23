@@ -301,6 +301,98 @@ internal sealed class KeyChips : Control
     }
 }
 
+/// <summary>
+/// A label, a slider and its value box, for a setting adjusted by eye. <see cref="ValueChanged"/>
+/// says whether the change is final: false while the slider is dragged, true when it is released
+/// or the box is used, so that settings are saved once per gesture.
+/// </summary>
+internal sealed class SliderField : FlowLayoutPanel
+{
+    private readonly TrackBar _track;
+    private readonly NumericUpDown _box;
+    private readonly double _scale;
+    private bool _syncing;
+    private bool _dragged;
+
+    public SliderField(string label, double min, double max, int decimals, string unit)
+    {
+        _scale = Math.Pow(10, decimals);
+        AutoSize = true;
+        WrapContents = false;
+        Margin = Padding.Empty;
+        BackColor = Theme.CardBackground;
+
+        var name = UiFactory.Text(label);
+        name.AutoSize = false;
+        name.Size = new Size(Theme.S(150), Theme.S(26));
+        _track = new TrackBar
+        {
+            Minimum = (int)Math.Round(min * _scale),
+            Maximum = (int)Math.Round(max * _scale),
+            TickStyle = TickStyle.None,
+            AutoSize = false,
+            Size = new Size(Theme.S(300), Theme.S(30)),
+            BackColor = Theme.CardBackground,
+            SmallChange = 1,
+            LargeChange = (int)Math.Max(1, Math.Round(_scale * (max - min) / 20)),
+        };
+        _box = UiFactory.Number((decimal)min, (decimal)max, 80, decimals, (decimal)(1 / _scale));
+        var units = UiFactory.Text(unit);
+        foreach (var control in new Control[] { name, _track, _box, units })
+        {
+            control.Margin = new Padding(Theme.S(2), Theme.S(2), Theme.S(2), Theme.S(2));
+            Controls.Add(control);
+        }
+
+        _track.Scroll += (_, _) =>
+        {
+            _dragged = true;
+            Sync(() => _box.Value = Math.Clamp((decimal)(_track.Value / _scale), _box.Minimum, _box.Maximum));
+            ValueChanged?.Invoke(false);
+        };
+        _track.MouseUp += (_, _) => Released();
+        _track.KeyUp += (_, _) => Released();
+        _track.MouseLeave += (_, _) => Released(); // the wheel scrolls without a button up
+        _box.ValueChanged += (_, _) =>
+        {
+            if (_syncing)
+                return;
+            Sync(() => _track.Value = Math.Clamp((int)Math.Round((double)_box.Value * _scale), _track.Minimum, _track.Maximum));
+            ValueChanged?.Invoke(true);
+        };
+    }
+
+    /// <summary>The value changed; true when the gesture is over (save), false while dragging (apply only).</summary>
+    public event Action<bool>? ValueChanged;
+
+    /// <summary>The value, clamped to the range. Setting it raises no event.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public double Value
+    {
+        get => (double)_box.Value;
+        set => Sync(() =>
+        {
+            _box.Value = Math.Clamp((decimal)Math.Round(value, (int)Math.Log10(_scale)), _box.Minimum, _box.Maximum);
+            _track.Value = Math.Clamp((int)Math.Round((double)_box.Value * _scale), _track.Minimum, _track.Maximum);
+        });
+    }
+
+    private void Released()
+    {
+        if (!_dragged)
+            return;
+        _dragged = false;
+        ValueChanged?.Invoke(true);
+    }
+
+    private void Sync(Action action)
+    {
+        _syncing = true;
+        try { action(); }
+        finally { _syncing = false; }
+    }
+}
+
 internal static class UiFactory
 {
     public static Button Button(string text, EventHandler? click = null, string? glyph = null)

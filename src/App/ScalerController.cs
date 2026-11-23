@@ -227,9 +227,14 @@ internal sealed class ScalerController : IDisposable
     }
 
     /// <summary>The user edited these options: persist them and apply them live if they are in use.</summary>
-    public void OnOptionsEdited(ScalingOptions edited)
+    /// <summary>
+    /// Settings edited in a page: saved, and applied live when they are the scaled window's.
+    /// <paramref name="save"/> false while a slider is dragged: applied only, saved when released.
+    /// </summary>
+    public void OnOptionsEdited(ScalingOptions edited, bool save = true)
     {
-        Store.Save();
+        if (save)
+            Store.Save();
         if (_session != null && ReferenceEquals(edited, ActiveOptions))
             _session.UpdateOptions(edited);
     }

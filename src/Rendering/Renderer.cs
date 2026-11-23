@@ -77,6 +77,18 @@ internal sealed class Renderer : IDisposable
 
     public const string FallbackShaderName = "Nearest (intégré)";
 
+    // Simulated interlacing: one line in two of the source (FIELD 0 = even, 1 = odd), half as high.
+    private const string FieldPixelShaderSource = """
+        Texture2D<float4> Source : register(t0);
+        float4 main(float4 position : SV_POSITION) : SV_TARGET
+        {
+            uint width, height;
+            Source.GetDimensions(width, height);
+            int y = min(int(position.y) * 2 + FIELD, int(height) - 1);
+            return Source.Load(int3(int(position.x), y, 0));
+        }
+        """;
+
     private readonly string _profileSuffix;
     private readonly ID3D11VertexShader _vertexShader;
     private readonly ID3D11VertexShader _stripVertexShader;
@@ -89,14 +101,29 @@ internal sealed class Renderer : IDisposable
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private ID3D11PixelShader? _pixelShader;
 
-    // The captured region (UpdateSource), and the part of it the aspect ratio keeps (_crop formats).
+    // The captured region (UpdateSource); the frame when it goes beyond the region (black around);
+    // the part the shader reads when it is not all of one of them (frame inside the region, _crop formats).
     private ID3D11Texture2D? _capturedTexture;
     private ID3D11ShaderResourceView? _capturedView;
+    private ID3D11Texture2D? _paddedTexture;
+    private ID3D11ShaderResourceView? _paddedView;
+    private ID3D11RenderTargetView? _paddedTarget;
+    private Rectangle _paddedFrame;
+    private System.Drawing.Size _paddedRegion;
+    private long _paddedFromVersion = -1;
+    private long _paddedVersion;
     private ID3D11Texture2D? _croppedTexture;
     private ID3D11ShaderResourceView? _croppedView;
     private Rectangle _croppedFrom;
+    private ID3D11Texture2D? _croppedSource;
     private long _capturedVersion;
     private long _croppedVersion = -1;
+
+    // Simulated interlacing: the field the shader reads instead of the picture.
+    private readonly ID3D11PixelShader[] _fieldShaders;
+    private ID3D11Texture2D? _fieldTexture;
+    private ID3D11ShaderResourceView? _fieldView;
+    private ID3D11RenderTargetView? _fieldTarget;
     private uint _frameCount;
 
     /// <param name="adapter">
@@ -150,6 +177,11 @@ internal sealed class Renderer : IDisposable
         _pointSampler = Device.CreateSamplerState(SamplerDescription.PointClamp);
         _linearSampler = Device.CreateSamplerState(SamplerDescription.LinearClamp);
         _constantBuffer = Device.CreateBuffer(new BufferDescription((uint)Marshal.SizeOf<ShaderConstants>(), BindFlags.ConstantBuffer));
+        _fieldShaders =
+        [
+            Device.CreatePixelShader(Compile("#define FIELD 0\n" + FieldPixelShaderSource, "EvenField", "ps" + _profileSuffix)),
+            Device.CreatePixelShader(Compile("#define FIELD 1\n" + FieldPixelShaderSource, "OddField", "ps" + _profileSuffix)),
+        ];
     }
 
     public ID3D11Device Device { get; }
@@ -222,13 +254,58 @@ internal sealed class Renderer : IDisposable
     }
 
     /// <summary>
-    /// The texture the shader reads for <paramref name="part"/> of the captured picture: the
-    /// captured one when it is whole, else a copy of the part, so that shaders clamp at its edges.
+    /// The texture the shader reads for <paramref name="part"/> of <paramref name="frame"/> (frame
+    /// pixels; the frame in region pixels): the captured or padded texture when the part is all of
+    /// it, else a copy of the part, so that shaders clamp at its edges. A frame inside the region is
+    /// read from the captured texture; one going beyond it from a copy with black around.
     /// </summary>
-    private ID3D11ShaderResourceView SourceView(Rectangle part)
+    private ID3D11ShaderResourceView SourceView(Rectangle frame, Rectangle part)
     {
-        if (part == new Rectangle(0, 0, CapturedWidth, CapturedHeight))
-            return _capturedView!;
+        var region = new Rectangle(0, 0, CapturedWidth, CapturedHeight);
+        if (region.Contains(frame))
+        {
+            part.Offset(frame.Location);
+            return part == region ? _capturedView! : CroppedView(_capturedTexture!, _capturedVersion, part);
+        }
+        UpdatePadded(frame);
+        return part == new Rectangle(Point.Empty, frame.Size) ? _paddedView! : CroppedView(_paddedTexture!, _paddedVersion, part);
+    }
+
+    /// <summary>The frame with black where it goes beyond the captured region; the black is drawn when the layout changes.</summary>
+    private void UpdatePadded(Rectangle frame)
+    {
+        if (_paddedTexture == null || frame.Size != _paddedFrame.Size)
+        {
+            _paddedTarget?.Dispose();
+            _paddedView?.Dispose();
+            _paddedTexture?.Dispose();
+            _paddedTexture = Device.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)frame.Width, (uint)frame.Height, 1, 1,
+                BindFlags.ShaderResource | BindFlags.RenderTarget));
+            _paddedView = Device.CreateShaderResourceView(_paddedTexture);
+            _paddedTarget = Device.CreateRenderTargetView(_paddedTexture);
+            _paddedFrame = Rectangle.Empty;
+        }
+        var regionSize = new System.Drawing.Size(CapturedWidth, CapturedHeight);
+        bool layout = frame != _paddedFrame || regionSize != _paddedRegion;
+        if (!layout && _paddedFromVersion == _capturedVersion)
+            return;
+        if (layout)
+            Context.ClearRenderTargetView(_paddedTarget!, new Color4(0f, 0f, 0f, 1f));
+        var visible = Rectangle.Intersect(frame, new Rectangle(Point.Empty, regionSize));
+        if (visible.Width > 0 && visible.Height > 0)
+        {
+            Context.CopySubresourceRegion(_paddedTexture, 0, (uint)(visible.X - frame.X), (uint)(visible.Y - frame.Y), 0, _capturedTexture!, 0,
+                new Box(visible.Left, visible.Top, 0, visible.Right, visible.Bottom, 1));
+        }
+        _paddedFrame = frame;
+        _paddedRegion = regionSize;
+        _paddedFromVersion = _capturedVersion;
+        _paddedVersion++;
+    }
+
+    /// <summary>A copy of <paramref name="part"/> of <paramref name="source"/>, made again when the source's content changed.</summary>
+    private ID3D11ShaderResourceView CroppedView(ID3D11Texture2D source, long version, Rectangle part)
+    {
         if (_croppedTexture == null || part.Size != _croppedFrom.Size)
         {
             _croppedView?.Dispose();
@@ -237,32 +314,77 @@ internal sealed class Renderer : IDisposable
             _croppedView = Device.CreateShaderResourceView(_croppedTexture);
             _croppedVersion = -1;
         }
-        if (_croppedVersion != _capturedVersion || part != _croppedFrom)
+        if (_croppedVersion != version || part != _croppedFrom || !ReferenceEquals(source, _croppedSource))
         {
-            Context.CopySubresourceRegion(_croppedTexture, 0, 0, 0, 0, _capturedTexture!, 0,
+            Context.CopySubresourceRegion(_croppedTexture, 0, 0, 0, 0, source, 0,
                 new Box(part.Left, part.Top, 0, part.Right, part.Bottom, 1));
             _croppedFrom = part;
-            _croppedVersion = _capturedVersion;
+            _croppedVersion = version;
+            _croppedSource = source;
         }
         return _croppedView!;
     }
 
-    /// <summary>Clears the target to black and draws the picture where <paramref name="placement"/> says (target pixels).</summary>
-    public void Draw(ID3D11RenderTargetView target, Placement placement)
+    /// <summary>
+    /// One line in two of <paramref name="source"/> (<paramref name="size"/> pixels): the even ones
+    /// for <paramref name="field"/> 0, the odd ones for 1, into a texture half as high (rounded up).
+    /// </summary>
+    private ID3D11ShaderResourceView FieldView(ID3D11ShaderResourceView source, System.Drawing.Size size, int field)
+    {
+        int height = (size.Height + 1) / 2;
+        if (_fieldTexture == null || _fieldTexture.Description.Width != size.Width || _fieldTexture.Description.Height != height)
+        {
+            _fieldTarget?.Dispose();
+            _fieldView?.Dispose();
+            _fieldTexture?.Dispose();
+            _fieldTexture = Device.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)size.Width, (uint)height, 1, 1,
+                BindFlags.ShaderResource | BindFlags.RenderTarget));
+            _fieldView = Device.CreateShaderResourceView(_fieldTexture);
+            _fieldTarget = Device.CreateRenderTargetView(_fieldTexture);
+        }
+        Context.OMSetRenderTargets(_fieldTarget!);
+        Context.RSSetViewport(new Viewport(0, 0, size.Width, height));
+        Context.RSSetState(_rasterizerState);
+        Context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        Context.IASetInputLayout(null);
+        Context.VSSetShader(_vertexShader);
+        Context.PSSetShader(_fieldShaders[field & 1]);
+        Context.PSSetShaderResource(0, source);
+        Context.Draw(3, 0);
+        Context.PSSetShaderResource(0, null!);
+        return _fieldView!;
+    }
+
+    /// <summary>
+    /// Clears the target to black and draws the picture where <paramref name="placement"/> says (target
+    /// pixels). <paramref name="field"/>: which lines an interlaced placement shows (0 even, 1 odd).
+    /// </summary>
+    public void Draw(ID3D11RenderTargetView target, Placement placement, int field = 0)
     {
         Context.ClearRenderTargetView(target, new Color4(0f, 0f, 0f, 1f));
         RectangleF dest = placement.Dest;
-        Rectangle part = Rectangle.Intersect(placement.Source, new Rectangle(0, 0, CapturedWidth, CapturedHeight));
+        Rectangle frame = placement.Frame ?? new Rectangle(0, 0, CapturedWidth, CapturedHeight);
+        Rectangle part = Rectangle.Intersect(placement.Source, new Rectangle(Point.Empty, frame.Size));
         if (_capturedView == null || _pixelShader == null || dest.Width < 1 || dest.Height < 1 || part.Width < 1 || part.Height < 1)
             return;
-        var sourceView = SourceView(part);
+        var sourceView = SourceView(frame, part);
+        int sourceHeight = part.Height;
+        if (placement.Interlaced && part.Height >= 2)
+        {
+            // The vertex shader mirrors with the constants: unmirrored for the field.
+            var straight = new ShaderConstants { MirrorSignX = 1f, MirrorSignY = 1f };
+            Context.UpdateSubresource(in straight, _constantBuffer);
+            Context.VSSetConstantBuffer(0, _constantBuffer);
+            sourceView = FieldView(sourceView, part.Size, field);
+            sourceHeight = (part.Height + 1) / 2;
+        }
 
         var constants = new ShaderConstants
         {
             SourceWidth = part.Width,
-            SourceHeight = part.Height,
+            SourceHeight = sourceHeight,
             InvSourceWidth = 1f / part.Width,
-            InvSourceHeight = 1f / part.Height,
+            InvSourceHeight = 1f / sourceHeight,
             OutputWidth = dest.Width,
             OutputHeight = dest.Height,
             InvOutputWidth = 1f / dest.Width,
@@ -364,12 +486,12 @@ internal sealed class Renderer : IDisposable
     }
 
     /// <summary>Renders into an off-screen target and returns the result (used by the self-test).</summary>
-    public Bitmap RenderToBitmap(int width, int height, Placement placement)
+    public Bitmap RenderToBitmap(int width, int height, Placement placement, int field = 0)
     {
         var desc = new Texture2DDescription(Format.B8G8R8A8_UNorm, (uint)width, (uint)height, 1, 1, BindFlags.RenderTarget);
         using var target = Device.CreateTexture2D(desc);
         using var view = Device.CreateRenderTargetView(target);
-        Draw(view, placement);
+        Draw(view, placement, field);
         return ToBitmap(ReadPixels(target, 0, 0, width, height), width, height);
     }
 
@@ -398,6 +520,14 @@ internal sealed class Renderer : IDisposable
         Context.Flush();
         _croppedView?.Dispose();
         _croppedTexture?.Dispose();
+        _paddedTarget?.Dispose();
+        _paddedView?.Dispose();
+        _paddedTexture?.Dispose();
+        _fieldTarget?.Dispose();
+        _fieldView?.Dispose();
+        _fieldTexture?.Dispose();
+        foreach (var shader in _fieldShaders)
+            shader.Dispose();
         _capturedView?.Dispose();
         _capturedTexture?.Dispose();
         _pixelShader?.Dispose();

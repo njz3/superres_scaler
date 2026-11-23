@@ -26,7 +26,6 @@ internal sealed class AboutPage : Page
 
         AddSection("Remerciements");
         AddCard(Theme.GlyphWindow, "Magpie", "Principe de la capture et de l'overlay, organisation de l'interface (github.com/Blinue/Magpie)");
-        AddCard(Theme.GlyphAspect, "linuxloader", "Formats d'aspect : original, 4:3, 16:9, _stretch, _crop, recadrage en barillet");
         AddCard(Theme.GlyphEye, "BackForceFeeder", "Détection des jeux par nom de processus et titre de fenêtre");
         AddCard(Theme.GlyphColor, "Vortice.Windows", "Accès à Direct3D 11 depuis .NET (licence MIT)");
         AddCard(Theme.GlyphVirtualDisplay, $"Virtual Display Driver {EmbeddedDriver.Version}",

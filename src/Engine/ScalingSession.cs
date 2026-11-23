@@ -50,6 +50,9 @@ internal sealed class ScalingSession
     private string? _monitorDevice;
     private Rectangle _outputBounds;
     private Rectangle _lastRegion;
+    private Rectangle? _lastFrame;
+    private int _field; // simulated interlacing: the lines shown at the last refresh, 0 even, 1 odd
+    private bool _interlacing; // the last placement was interlaced: the loop is paced by the output's refresh
     private long _capturedFrames;
 
     /// <summary>The output must be drawn again: new frame, new options, new size.</summary>
@@ -270,7 +273,11 @@ internal sealed class ScalingSession
             // Paced by the captured picture: each new frame is drawn and presented as soon as it
             // arrives, and the output shows the latest one at its own refresh. Waiting for the
             // output's refresh first would lose frames whenever its clock drifts from the source's.
-            using (var frame = capture.WaitForFrame(FrameWaitMs))
+            // Simulated interlacing is paced by the output instead: one field per refresh, the
+            // other lines of the latest frame, even when no new frame came. It follows the last
+            // placement: the option only interlaces a source with more lines than the screen's picture.
+            bool interlace = _interlacing && hasImage && _options.SimulatedInterlace;
+            using (var frame = capture.WaitForFrame(interlace ? 0 : FrameWaitMs))
             {
                 if (frame != null)
                 {
@@ -284,6 +291,8 @@ internal sealed class ScalingSession
             }
             if (_statistics.TryReport(Stopwatch.GetTimestamp()) is { } report)
                 Log.Info(report);
+            if (interlace)
+                _redraw = true;
             if (!_redraw)
             {
                 KeepOnTop();
@@ -292,7 +301,26 @@ internal sealed class ScalingSession
             _redraw = false;
 
             var placement = Geometry.ComputePlacement(_options, renderer.CapturedWidth, renderer.CapturedHeight, presenter.Width, presenter.Height);
-            renderer.Draw(presenter.RenderTarget, placement);
+            if (placement.Frame != _lastFrame)
+            {
+                Log.Info(placement.Frame is { } framed
+                    ? $"Frame {framed.X},{framed.Y} {framed.Width}x{framed.Height} in the {renderer.CapturedWidth}x{renderer.CapturedHeight} region ({_options.FrameMode})"
+                    : "Frame: the whole region");
+                _lastFrame = placement.Frame;
+            }
+            if (_options.SimulatedInterlace && placement.Interlaced != _interlacing)
+            {
+                Log.Info(placement.Interlaced
+                    ? $"Simulated interlace on: {placement.Source.Height} source lines on {placement.Dest.Height:0}"
+                    : $"Simulated interlace off: {placement.Source.Height} source lines fit the {placement.Dest.Height:0} of the screen");
+            }
+            _interlacing = placement.Interlaced;
+            if (placement.Interlaced)
+            {
+                presenter.WaitForVerticalBlank();
+                _field ^= 1;
+            }
+            renderer.Draw(presenter.RenderTarget, placement, _field);
             try
             {
                 presenter.Present(_options.VSync);
@@ -389,7 +417,7 @@ internal sealed class ScalingSession
             _onMessage?.Invoke("Nouvelle résolution : appliquée au prochain démarrage de la mise à l'échelle");
         if (!string.Equals(previous.SourceDisplay, options.SourceDisplay, StringComparison.OrdinalIgnoreCase))
             _onMessage?.Invoke("Nouvelle source : appliquée au prochain démarrage de la mise à l'échelle");
-        if (previous.AutoCrop != options.AutoCrop || previous.ClientAreaOnly != options.ClientAreaOnly
+        if (previous.AutoCrop != options.AutoCrop || previous.ClientAreaOnly != options.ClientAreaOnly || previous.FrameMode != options.FrameMode
             || previous.CropLeft != options.CropLeft || previous.CropTop != options.CropTop
             || previous.CropRight != options.CropRight || previous.CropBottom != options.CropBottom)
             _blackBars.Reset();

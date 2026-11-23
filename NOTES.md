@@ -41,6 +41,15 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 30 | 20/11 | Patcher les pilotes NVIDIA récents pour sortir de l'entrelacé ? | ✅ réponse : sur Pascal, entrelacé jusqu'au pilote 537.58 (rapport d'utilisateur, forum NVIDIA) ; patcher `nvlddmkm.sys` casse sa signature ; Turing et suivants : pas d'entrelacé sous Windows. Image borne : pilote 582.66 sur les deux bornes, PHL débranché, écran virtuel seul écran actif (1920x240) |
 | 31 | 23/11 | Ajouter 1024x384 et 512x384 à 60 Hz à l'écran virtuel | ✅ ajoutés au `vdd_settings.xml` de ce PC (12 modes), pris en compte à la prochaine création ; bornes non modifiées |
 | 32 | 23/11 | Commit, push et release (sans changement de code, au choix de l'utilisateur) | ✅ `4ee9df0` poussé ; 0.4.3 (`4ee9df0` + numéro de version), même code que la 0.4.2, 7,4 Mo ; 197 tests, auto-tests sur une copie ; pas de déploiement demandé |
+| 33 | 23/11 | Recadrage par curseurs : coin haut-gauche et coin bas-droit, dans l'image ou en dehors (zoom, dézoom) ; proposer plusieurs façons | ✅ quatre façons proposées : quatre coins, zoom et centre, marges négatives, rectangle sur une image |
+| 34 | 23/11 | L'affichage vers un moniteur en super-résolution restera-t-il possible ? | ✅ oui : le recadrage ne choisit que la partie de la source ; forme 4:3 auto, ratio, shaders, miroir et résolution inchangés |
+| 35 | 23/11 | Faire les quatre modes de recadrage, au choix dans une liste | ⚠️ liste « Recadrage » (marges en pixels, quatre coins, zoom et centre, rectangle sur l'image), cadre bordé de noir au-delà de l'image, appliqué en direct ; `--crop` négatif, `--frame`, `--zoom`, `--zoom-center` ; 212 tests, auto-test 60/60 avec 4 cas de cadre rendus ; carte vérifiée hors écran ; pas essayé à la main ni sur une borne ; commité et poussé le 23/11 |
+| 36 | 23/11 | Actualiser automatiquement l'image du rectangle, toutes les secondes ; un entrelacement simulé (lignes décalées une image sur deux) pour mieux lire le texte ? | ⚠️ image actualisée chaque seconde hors du fil de l'interface (bouton retiré) ; 212 tests ; pas vu en vrai (l'exe Debug lancé par l'utilisateur à 13:17 bloquait la compilation, faite dans un autre dossier) ; entrelacement : réponse donnée, rien de fait |
+| 37 | 23/11 | Faire l'entrelacement simulé | ⚠️ option « Entrelacement simulé » (`--interlace`) : lignes paires puis impaires de la source, une trame par rafraîchissement ; 213 tests, auto-test 62/62 (les deux trames vérifiées au pixel) ; session réelle sur une fenêtre de test fixe : 57,5 à 58,3 présentations/s avec, 0 sans ; pas essayé sur un jeu ni sur une borne ; commité et poussé le 23/11 |
+| 38 | 23/11 | Déplacer tout le contenu de `src/SuperResScaler` un niveau au-dessus | ⚠️ projet maintenant dans `src/` (`src/SuperResScaler.csproj`), déplacé avec `git mv` (historique gardé), `bin/` et `obj/` aussi ; solution, référence des tests, `.gitattributes` du pilote, README et procédure de release mis à jour ; octets du pilote vérifiés identiques ; `b178438`, poussé |
+| 39 | 23/11 | L'entrelacement ne devrait pas être activable si la destination a plus de lignes que la source | ⚠️ oui : il ne s'applique que si la source (après recadrage) a plus de lignes que l'image à l'écran, décidé à chaque image ; la boucle suit cet état (plus de redessin à vide) ; carte Placement et journal le disent ; 221 tests, auto-test 63/63 (trames vérifiées en 1920x120, sans effet en 1920x240) ; session réelle 480 lignes : 58,1 présentations/s en 1920x240, 0,1 en 1920x480 ; commité et poussé le 23/11 |
+| 40 | 23/11 | Ne plus citer linuxloader dans l'option Ratio d'aspect, ni dans les remerciements (l'utilisateur est l'auteur de cette fonction dans linuxloader) | ✅ carte « Ratio d'aspect » et carte des remerciements de la page À propos modifiées ; 221 tests ; commité et poussé le 23/11 |
+| 41 | 23/11 | Retirer aussi linuxloader du README et de l'aide de `--aspect` | ✅ sections Réglages et Ratio d'aspect du README, arborescence, aide `--aspect` ; restent des commentaires du code et l'historique de NOTES.md ; 221 tests ; commité et poussé le 23/11 |
 
 ## Releases
 
@@ -97,7 +106,7 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   ```
 - Publication en un seul exe dépendant de .NET (format retenu le 26/10) :
   ```
-  dotnet publish src/SuperResScaler -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o publish
+  dotnet publish src -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o publish
   ```
   `EnableCompressionInSingleFile=false` est obligatoire : le csproj l'active pour la version autonome et, sans
   runtime embarqué, le SDK refuse la compression (NETSDK1176).
@@ -127,7 +136,7 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 
 ### Écran virtuel (demande 12)
 - Pilote Virtual Display Driver 25.7.23 (MIT, signé SignPath), embarqué tel quel en ressources ; originaux et
-  SHA-256 dans `src/SuperResScaler/VirtualDisplayDriver/SOURCE.txt`. Son INF est en LF : `.gitattributes` empêche
+  SHA-256 dans `src/VirtualDisplayDriver/SOURCE.txt` (`src/SuperResScaler/…` avant la demande 38). Son INF est en LF : `.gitattributes` empêche
   git de le convertir, sinon le catalogue signé ne correspond plus. Un test vérifie les SHA-256 des ressources.
 - Créer / détruire : SuperResScaler se relance élevé (`--virtual-display-admin`), crée le périphérique
   `Root\MttVDD` comme devcon (SetupAPI) avec le pilote extrait dans un dossier temporaire, ou le supprime.
@@ -299,3 +308,50 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   suite. Cause : ce qui était à l'écran à ce moment-là (PC en cours d'utilisation), pas la version.
 - Résultats retenus : 56/56, 46 + 1 SKIP en 1809 simulé, 58/58 avec le plein écran. Moins de tests qu'avec la 0.4.2
   (60, 50, 62) : ce PC n'a plus d'écran virtuel.
+
+### Recadrage en quatre modes (demandes 33 à 35)
+- Un seul réglage, `FrameMode`, choisit comment se calcule le **cadre** (`Geometry.ComputeFrame`), en pixels de la
+  zone capturée (après zone client, marges positives et recadrage automatique) :
+  - `Margins` : `CropLeft`… ; les valeurs positives découpent la zone comme avant, les négatives ajoutent du noir
+    (au plus la moitié de la zone de chaque côté) ;
+  - `Corners` et `Rectangle` : `FrameLeft`… en % de -50 à 150 ; `Rectangle` n'est qu'un autre éditeur des mêmes
+    valeurs (`UI/FrameEditor.cs`, image GDI de la fenêtre de *Placement* ou de l'écran source) ;
+  - `Zoom` : `ZoomX`/`ZoomY` de 50 à 800 % (liés par défaut, `ZoomLinked`), centre `ZoomCenterX`/`Y` en %.
+  - Le cadre fait au plus deux fois la zone par axe et au moins un pixel ; les coins peuvent être donnés dans
+    n'importe quel ordre.
+- `ComputePlacement` traite le cadre comme l'image : ratio, `_crop`, barillet et forme 4:3 des modes
+  super-résolution s'appliquent à lui. `Placement.Frame` le transmet au rendu (null = toute la zone).
+- Rendu : un cadre dans la zone est lu par une copie de sa partie (comme les formats `_crop`) ; un cadre qui
+  déborde passe par une texture de sa taille, effacée en noir quand la disposition change, où la partie visible
+  est recopiée à chaque image. Les shaders ne changent pas. Le cadre est recalculé à chaque dessin : un réglage
+  changé s'applique aussi sur une image fixe.
+- Interface : carte « Recadrage » (liste du mode, Réinitialiser), un panneau par mode avec des curseurs
+  (`SliderField` : curseur + valeur). Pendant un glissement, les réglages sont appliqués sans être enregistrés ;
+  ils le sont au relâchement (`OnOptionsEdited(…, save)`).
+- Ligne de commande : `--crop` accepte les négatifs ; `--frame g,h,d,b`, `--zoom z[,zy]`, `--zoom-center x,y`.
+- Vérifié : 212 tests (15 nouveaux) ; auto-test 60/60 sur ce PC, dont 4 cas rendus par le GPU en 1920x240
+  (zoom 200 %, zoom 50 % avec noir autour, moitié gauche, marge de -160 px), vérifiés au pixel ; les quatre
+  panneaux rendus hors écran. Pas vérifié : les gestes à la souris (les clics injectés n'atteignent pas
+  l'interface) et une session en direct.
+- L'image du rectangle est reprise chaque seconde (minuterie de la page, copie GDI dans une tâche), sauf pendant
+  un glissement, page cachée ou fenêtre réduite ; une copie ratée (session verrouillée, UAC) garde la précédente.
+
+### Entrelacement simulé (demandes 36 et 37)
+- But : sur un mode progressif à 240 lignes, une source de 480 lignes est réduite de moitié et les traits d'une
+  ligne (texte) deviennent gris. On montre une ligne sur deux, paires puis impaires, une trame par
+  rafraîchissement : chaque trait est à plein contraste une image sur deux. Les deux trames tombent sur les mêmes
+  lignes du tube (pas de demi-ligne de décalage en progressif) : pas de lignes en plus, scintillement à 30 Hz.
+- Rendu : `Placement.Interlaced` ; une passe interne (`FieldPixelShaderSource`, compilée pour la trame paire et
+  l'impaire) copie une ligne sur deux de ce que lirait le shader dans une texture deux fois moins haute, que le
+  shader de l'utilisateur lit à la place. Recadrage, `_crop`, barillet et miroir inchangés.
+- Cadence : avec l'option, la boucle ne bloque plus sur la capture (attente 0), attend le rafraîchissement de la
+  sortie (`IDXGIOutput.WaitForVBlank` de la swap chain ; à défaut une minuterie à 60 Hz) et présente l'autre trame
+  de la dernière image, nouvelle ou non.
+- Vérifié : 213 tests ; auto-test 62/62, la trame paire ne montre que les lignes blanches de la mire, l'impaire
+  que les rouges, les barres en place ; session `--hwnd` + `--preview 1920x240` sur une fenêtre de test fixe à
+  lignes alternées : 57,5 à 58,3 présentations/s avec `--interlace`, 0 sans (quelques rafraîchissements
+  montrent deux fois la même trame). Pas vérifié : sur un jeu, en plein écran, sur une borne (pilote NVIDIA,
+  duplication de bureau).
+- Demande 39 : l'option n'agit que si la partie lue de la source a plus de lignes que l'image à l'écran
+  (`Placement.Interlaced`) ; sinon toutes les lignes s'affichent et une trame sur deux ne ferait que perdre du
+  détail. La boucle se cale sur ce dernier état et non sur l'option, sans quoi elle redessinerait sans arrêt.

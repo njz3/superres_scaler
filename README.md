@@ -258,6 +258,8 @@ Le mode ligne de commande attend la fenêtre, la met à l'échelle, et quitte qu
 SuperResScaler.exe --process game.exe --wait 60
 SuperResScaler.exe --process Supermodel.exe --shader Nearest --autocrop
 SuperResScaler.exe --title "Daytona" --crop 0,0,0,16 --delay 3
+SuperResScaler.exe --process game.exe --zoom 125 --zoom-center 50,45
+SuperResScaler.exe --process game.exe --interlace
 SuperResScaler.exe --process game.exe --mode fullscreen --aspect 4:3_letterbox
 SuperResScaler.exe --process game.exe --aspect 4:3_crop --barrel --barrel-center 60
 SuperResScaler.exe --process game.exe --resolution 1920x240@60
@@ -289,41 +291,92 @@ d'affichage disponibles (comme `SetResolution LIST`). Codes de sortie : `0` OK,
 | --- | --- |
 | **Shader** | filtre de mise à l'échelle (voir ci-dessous) |
 | **Affichage** | *Plein écran étiré* ou *Plein écran au ratio (bandes noires)* — voir ci-dessous |
-| **Ratio d'aspect** | `original`, `4:3`, `16:9`, `4:3_stretch`, `4:3_crop`… comme le linuxloader — voir ci-dessous |
+| **Ratio d'aspect** | `original`, `4:3`, `16:9`, `4:3_stretch`, `4:3_crop`… — voir ci-dessous |
 | **Rognage** | formats `_crop` : position de la partie gardée, barillet (milieu non déformé, rayon) — voir ci-dessous |
 | **Forme de l'écran** | forme physique de l'écran. `auto` : 4:3 pour un mode super-résolution (au plus 600 lignes et plus de 2 fois plus large que haut : 1280x240, 1920x240, 2560x240, 1920x480i…), pixels carrés sinon (écran LCD) |
 | **Écran de sortie** | *Auto* = l'écran où se trouve la fenêtre du jeu ; si tout un écran est capturé, un autre que celui-là |
 | **Résolution** | mode d'affichage pendant la mise à l'échelle (ex. `1920x240@60`) — voir ci-dessous |
 | **Miroir** | retourne toute la sortie pour un projecteur : X (`--mirror-x`) = gauche/droite, projecteur derrière un écran ; Y (`--mirror-y`) = haut/bas, projecteur par le dessus ; X et Y = image tournée de 180° |
+| **Entrelacement simulé** | à chaque rafraîchissement, les lignes paires puis impaires de la source (`--interlace`) — voir *Entrelacement simulé* |
 | **Source** | la fenêtre du jeu, ou tout un écran (`--display`) — voir *Capturer un écran complet* |
 | **Zone client uniquement** | ignore la barre de titre et les bordures |
-| **Recadrage manuel** | pixels à retirer de chaque côté (barres d'outils d'émulateur, bords parasites…) |
+| **Recadrage** | la partie de l'image mise à l'échelle, de quatre façons au choix (marges en pixels, quatre coins, zoom et centre, rectangle sur l'image) ; elle peut déborder de l'image pour dézoomer — voir *Recadrage* |
 | **Recadrage automatique** | retire les bandes noires (jeu 4:3 centré dans une fenêtre plus large). La zone détectée ne fait que grandir pour éviter les sauts lors des scènes sombres |
 | **Capturer le curseur** | inclut le pointeur de la souris dans l'image (pas avec la duplication de bureau) |
 | **Méthode de capture d'un écran** | *Auto*, `Windows.Graphics.Capture` ou duplication de bureau (`--capture`) — voir *Méthode de capture* |
 | **VSync** | synchro verticale (désactivée = tearing autorisé, latence minimale) |
 | **Prévisualisation fenêtrée** | affiche le résultat dans une fenêtre (par ex. 1920x240) pour tester sur un écran de PC |
 
+### Recadrage
+
+Le recadrage choisit le **cadre** : la partie de l'image capturée qui est mise à l'échelle. À
+l'intérieur de l'image, il zoome ; au-delà (au plus deux fois l'image dans chaque sens), la partie
+hors de l'image est noire, ce qui dézoome. Le cadre devient ensuite l'image pour le ratio d'aspect et
+l'affichage (bandes noires, `_crop`, barillet, forme 4:3 d'un mode super-résolution) : rien ne change
+pour l'écran de sortie. Il se choisit de quatre façons, dans une liste de la page du profil :
+
+| Mode | Réglages | Ligne de commande |
+| --- | --- | --- |
+| **Marges en pixels** | pixels retirés à gauche, en haut, à droite, en bas ; une valeur négative ajoute du noir de ce côté (au plus la moitié de l'image) | `--crop g,h,d,b` |
+| **Quatre coins** | coin haut-gauche et coin bas-droit en % de l'image, de -50 à 150 % | `--frame g,h,d,b` |
+| **Zoom et centre** | zoom horizontal et vertical (liés par défaut), de 50 à 800 %, et centre en % de l'image | `--zoom 150` ou `--zoom 150,120`, `--zoom-center x,y` |
+| **Rectangle sur l'image** | les coins des *Quatre coins*, tirés à la souris sur une image de la source (la fenêtre choisie dans *Placement*, ou l'écran source), actualisée chaque seconde ; on déplace le cadre en le faisant glisser | — |
+
+- Les curseurs et le rectangle s'appliquent **en direct** pendant la mise à l'échelle ; le réglage
+  est enregistré quand on relâche la souris. Changer de mode garde les valeurs des autres modes.
+- Les % suivent les changements de résolution du jeu ; les marges en pixels, non.
+- L'image du *Rectangle* est une copie GDI de l'écran à l'endroit de la source, hors du fil de
+  l'interface : une fenêtre recouverte (par SuperResScaler lui-même, par exemple) ou réduite n'y
+  apparaît pas. Rien n'est copié pendant un glissement, ni quand la page est cachée ou la fenêtre
+  réduite.
+- Le recadrage s'applique après la zone client et le recadrage automatique des bandes noires. Les
+  marges positives découpent la source avant la détection des bandes noires.
+- Le noir ajouté passe par une texture de la taille du cadre : les shaders ne changent pas et
+  voient une image bordée de noir.
+
+### Entrelacement simulé
+
+Quand la source a bien plus de lignes que l'écran (un jeu en 640x480 sur un mode 1920x240), la
+réduction fond deux lignes en une : un trait d'un pixel de haut, comme dans du texte, devient gris.
+L'entrelacement simulé montre à chaque rafraîchissement une ligne sur deux de la source, les paires
+puis les impaires, chaque trame mise à l'échelle sur toute l'image : le trait reste à plein contraste
+une image sur deux.
+
+- Seulement quand la source (après recadrage) a plus de lignes que l'image à l'écran : sinon toutes
+  ses lignes s'affichent déjà, et l'option est sans effet. Comme le jeu peut changer de résolution,
+  c'est décidé à chaque image ; la carte *Placement* l'indique et le journal note le passage
+  (« Simulated interlace on: 480 source lines on 240 »).
+- Sur un mode progressif, les deux trames tombent sur les mêmes lignes du tube : contrairement à un
+  vrai 480i, il n'y a pas de lignes en plus, et les détails fins scintillent à 30 Hz. C'est à essayer
+  selon le jeu.
+- La sortie est alors redessinée à chaque rafraîchissement de l'écran, avec la dernière image
+  capturée, même quand le jeu n'en envoie pas de nouvelle. Si DXGI ne peut pas attendre le
+  rafraîchissement de cet écran, une minuterie à 60 Hz le remplace (le journal le dit).
+- La trame est extraite avant le shader : les shaders ne changent pas et reçoivent une image deux
+  fois moins haute. Le recadrage, le ratio, le miroir et le barillet s'appliquent comme sans.
+- Mesuré sur le PC de développement, fenêtre de prévisualisation et image fixe de 480 lignes : 57,5
+  à 58,3 présentations par seconde en 1920x240 ; 0 en 1920x480, où l'option est sans effet.
+
 ### Ratio d'aspect et bandes noires
 
-Mêmes formats que `ASPECT_RATIO` / `DISPLAY_MODE` du linuxloader (`blitPresent`), en deux étapes :
+Le placement se fait en deux étapes :
 
 1. **le cadre** (la forme du *Ratio d'aspect*, ou celle de la fenêtre pour `original`) remplit
-   l'écran (*Plein écran étiré*, `FULLSCREEN_STRETCH`) ou garde sa forme sur l'écran physique
-   avec des bandes noires (*Plein écran au ratio*, `FULLSCREEN`) ;
+   l'écran (*Plein écran étiré*, `--mode stretch`) ou garde sa forme sur l'écran physique
+   avec des bandes noires (*Plein écran au ratio*, `--mode aspect`) ;
 2. **l'image dans le cadre**, selon le format :
 
 | Ratio d'aspect | Image dans le cadre |
 | --- | --- |
 | `original` | le cadre a la forme de la fenêtre (taille en pixels, pixels carrés) |
-| `4:3`, `16:9`, `5:4`… (= `4:3_letterbox`) | entière, à sa propre forme, bandes noires là où les formes diffèrent (en parts du cadre, comme le linuxloader) |
+| `4:3`, `16:9`, `5:4`… (= `4:3_letterbox`) | entière, à sa propre forme, bandes noires là où les formes diffèrent (en parts du cadre) |
 | `4:3_stretch`, `16:9_stretch`… | remplit le cadre, déformée (ex. un jeu 256x224 affiché en 4:3) |
 | `4:3_crop`, `16:9_crop`… | remplit le cadre à sa forme, ce qui dépasse est coupé (côtés si l'image est plus large, haut et bas sinon) |
 
-Les noms du linuxloader (`4:3_LETTERBOX`, `16:9_STRETCH`, `4:3_CROP`…) sont acceptés tels quels,
+Les noms en majuscules (`4:3_LETTERBOX`, `16:9_STRETCH`, `4:3_CROP`…) sont acceptés tels quels,
 et tout ratio fonctionne (`5:4_crop`, `8:7_stretch`…).
 
-**Rognage** (formats `_crop`, `CROP_POSITION` / `CROP_BARREL` / `BARREL_CENTER` / `BARREL_RADIUS`) :
+**Rognage** (formats `_crop`) :
 
 - **position** : -100 garde la gauche (ou le haut), 0 le milieu, 100 la droite (ou le bas) ;
 - **barillet** : au lieu de couper, garde le milieu tel quel (même échelle et même partie de
@@ -331,10 +384,9 @@ et tout ratio fonctionne (`5:4_crop`, `8:7_stretch`…).
   enroulée sur un cylindre vu de face : toute l'image reste visible. *Milieu non déformé* = largeur
   du milieu en % du cadre (défaut 60, 100 = rognage simple) ; *rayon* = rayon du cylindre en % du
   cadre (défaut 50 : petit, la courbure se concentre au bord ; grand, compression presque
-  uniforme). Rendu en bande de quadrilatères texturés (64 pas par bord), avec les formules de
-  `barrelSetup` / `barrelSource` du linuxloader.
+  uniforme). Rendu en bande de quadrilatères texturés (64 pas par bord).
 
-Contrairement au linuxloader, le calcul tient compte de la **forme physique de l'écran** : en
+Le calcul tient compte de la **forme physique de l'écran** : en
 1920x240 sur un CRT 4:3, chaque pixel est 6 fois plus haut que large, sinon un jeu 4:3 « au
 ratio » n'occuperait que 320 pixels de large au centre.
 
@@ -485,7 +537,7 @@ src/                          projet SuperResScaler (SuperResScaler.csproj)
   App/SelfTest.cs             auto-test de bout en bout
   Engine/ScalingSession.cs    thread de rendu : capture -> shader -> présentation
   Engine/OverlayWindow.cs     fenêtre overlay (plein écran click-through ou prévisualisation)
-  Engine/Geometry.cs          zone source, placement (formats du linuxloader, barillet)
+  Engine/Geometry.cs          zone source, cadre du recadrage, placement (formats d'aspect, barillet)
   Native/DisplayModes.cs      modes d'affichage, changement et retour à la résolution d'origine
   Native/SetupApi.cs          création et suppression d'un périphérique racine (comme devcon)
   VirtualDisplay/             écran virtuel : pilote embarqué, création/destruction élevée, modes,
@@ -498,18 +550,19 @@ src/                          projet SuperResScaler (SuperResScaler.csproj)
   Capture/FrameCapture.cs     Windows.Graphics.Capture (fenêtre ou écran, Windows 10 1903+)
   Capture/DuplicationCapture.cs  duplication de bureau DXGI (écran entier, Windows 10 1809)
   Capture/WinRTInterop.cs     ponts WinRT <-> D3D11
-  Capture/ScreenSnapshot.cs   petite copie GDI d'un écran (vignette de l'écran virtuel)
-  Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders
+  Capture/ScreenSnapshot.cs   petite copie GDI d'un écran (vignette de l'écran virtuel, image du recadrage)
+  Rendering/Renderer.cs       device D3D11, compilation et exécution des shaders, cadre bordé de noir
   Rendering/SwapChainPresenter.cs  swap chain flip-model, présentation sans attente du rafraîchissement
   Rendering/GpuPriority.cs    priorité GPU du rendu (classe haute, comme OBS)
   Config/                     options, profils, settings.json
   UI/MainForm.cs              fenêtre façon Magpie : navigation, pages, zone de notification
   UI/Pages/                   Accueil, Écran virtuel, profil (par défaut ou jeu), Paramètres, À propos
-  UI/Controls.cs, Dialogs.cs  cartes de réglages, interrupteurs, raccourcis, Nouveau profil
+  UI/Controls.cs, Dialogs.cs  cartes de réglages, interrupteurs, curseurs, raccourcis, Nouveau profil
+  UI/FrameEditor.cs           rectangle du recadrage tiré à la souris sur une image de la source
   UI/DisplayIdentifier.cs     bouton Identifier : grand numéro sur chaque écran
   UI/VirtualDisplayThumbnail.cs  vignette de l'écran virtuel, en haut à droite des pages
   Shaders/                    shaders HLSL (copiés à côté de l'exécutable)
 tests/SuperResScaler.Tests/   tests unitaires xUnit (placement, ratios, barillet, modes d'affichage, profils,
                               écran virtuel : modes, vdd_settings.xml, pilote embarqué intact, vignette ;
-                              statistiques de capture)
+                              statistiques de capture ; recadrage : modes, limites, ligne de commande)
 ```

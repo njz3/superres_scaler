@@ -257,6 +257,49 @@ internal static class SelfTest
                 + $"pixels {(drawn && wrong.Count == 0 ? "OK" : string.Join("; ", wrong.DefaultIfEmpty("pattern wrong")))}, black bars {(bars ? "OK" : "missing")}");
         }
 
+        // Crop frames, stretched on 1920x240: zoomed in on the middle (bars 2 and 3 fill the screen),
+        // zoomed out to 50 % (the picture in the middle, black around), the left half of the
+        // picture, and 160 pixels of black added on the left by a negative margin.
+        var black = Color.Black;
+        var frames = new (string Name, ScalingOptions Options, (int X, int Y, Color Colour)[] Pixels)[]
+        {
+            ("zoom-200", new ScalingOptions { FrameMode = FrameMode.Zoom, ZoomX = 200, ZoomY = 200 }, [(240, 60, cyan), (720, 60, green)]),
+            ("zoom-50", new ScalingOptions { FrameMode = FrameMode.Zoom, ZoomX = 50, ZoomY = 50 },
+                [(240, 120, black), (1680, 120, black), (960, 30, black), (960, 210, black), (540, 80, white), (660, 80, yellow)]),
+            ("corners-left-half", new ScalingOptions { FrameMode = FrameMode.Corners, FrameRight = 50 },
+                [(240, 60, white), (720, 60, yellow), (1200, 60, cyan), (1680, 60, green)]),
+            ("margin-left-black", new ScalingOptions { CropLeft = -160 }, [(320, 60, black), (720, 60, white)]),
+        };
+        foreach (var (name, frameOptions, pixels) in frames)
+        {
+            var placement = Geometry.ComputePlacement(frameOptions, content.Width, content.Height, 1920, 240);
+            using var output = renderer.RenderToBitmap(1920, 240, placement);
+            output.Save(Path.Combine(outputDirectory, $"Area_1920x240_frame-{name}.png"));
+            var wrong = pixels.Where(p => !Near(output.GetPixel(p.X, p.Y), p.Colour))
+                              .Select(p => $"({p.X},{p.Y}) = {Describe(output.GetPixel(p.X, p.Y))} instead of {Describe(p.Colour)}").ToList();
+            check(wrong.Count == 0, $"frame {name} ({frameOptions.FrameMode}): {placement.Frame?.ToString() ?? "whole region"}, pixels {(wrong.Count == 0 ? "OK" : string.Join("; ", wrong))}");
+        }
+
+        // Simulated interlacing, on a 1920x120 screen where the 240 lines of the pattern do not fit:
+        // the lines below the bars alternate white (even rows) and red (odd rows); the even field
+        // shows only the white ones, the odd field only the red ones, one source line in two on each
+        // screen line. The bars above stay in place. On 1920x240 all the lines fit: no interlacing.
+        var interlaced = new ScalingOptions { SimulatedInterlace = true };
+        var fields = new (int Field, Color Lines)[] { (0, TestPatternForm.LineColour(200)), (1, TestPatternForm.LineColour(201)) };
+        foreach (var (field, lines) in fields)
+        {
+            var placement = Geometry.ComputePlacement(interlaced, content.Width, content.Height, 1920, 120);
+            using var output = renderer.RenderToBitmap(1920, 120, placement, field);
+            output.Save(Path.Combine(outputDirectory, $"Area_1920x120_interlace-field{field}.png"));
+            var points = new (int X, int Y, Color Colour)[] { (960, 100, lines), (960, 101, lines), (960, 115, lines), (540, 30, cyan) };
+            var wrong = points.Where(p => !Near(output.GetPixel(p.X, p.Y), p.Colour))
+                              .Select(p => $"({p.X},{p.Y}) = {Describe(output.GetPixel(p.X, p.Y))} instead of {Describe(p.Colour)}").ToList();
+            check(placement.Interlaced && wrong.Count == 0,
+                $"simulated interlace on 1920x120, field {field}: {(wrong.Count == 0 ? "only its lines, bars in place" : string.Join("; ", wrong))}");
+        }
+        check(!Geometry.ComputePlacement(interlaced, content.Width, content.Height, 1920, 240).Interlaced,
+            "simulated interlace on 1920x240: off, the 240 lines of the pattern fit");
+
         // Mirror: the output must be the exact mirror image of the normal one, off-centre crop and barrel included.
         var mirrorCases = new (string Name, ScalingOptions Options)[]
         {

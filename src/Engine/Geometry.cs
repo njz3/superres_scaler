@@ -7,10 +7,15 @@ namespace SuperResScaler.Engine;
 
 /// <summary>
 /// The picture on the output: drawn into <paramref name="Dest"/> (output pixels) from the
-/// <paramref name="Source"/> part of the image (source pixels), or bent along <paramref name="Barrel"/>,
+/// <paramref name="Source"/> part of the frame (frame pixels), or bent along <paramref name="Barrel"/>,
 /// the whole drawing flipped within <paramref name="Dest"/> on the mirrored axes.
+/// <paramref name="Frame"/> is the part of the captured region scaled (region pixels), which may go
+/// beyond it (black there); null = the whole region. <paramref name="Interlaced"/>: the source's even
+/// or odd lines only, alternately (simulated interlacing, see <see cref="ScalingOptions.SimulatedInterlace"/>),
+/// set only when the source part has more lines than <paramref name="Dest"/>.
 /// </summary>
-internal sealed record Placement(RectangleF Dest, Rectangle Source, BarrelStrip? Barrel, bool MirrorX = false, bool MirrorY = false);
+internal sealed record Placement(RectangleF Dest, Rectangle Source, BarrelStrip? Barrel, bool MirrorX = false, bool MirrorY = false,
+                                 Rectangle? Frame = null, bool Interlaced = false);
 
 /// <summary>
 /// CROP_BARREL, ported from linuxloader's blitStretching.c (barrelSetup, barrelArc, barrelSource):
@@ -95,6 +100,61 @@ internal static class Geometry
     /// <summary>Highest mode treated as a 15/25 kHz CRT mode by the "auto" display aspect.</summary>
     private const int MaxCrtLines = 600;
 
+    /// <summary>Frame corners and zoom centre, in % of the picture: the frame is at most twice the picture.</summary>
+    public const double MinFramePercent = -50, MaxFramePercent = 150;
+
+    /// <summary>Zoom in %: 50 shows the picture at half size, black around.</summary>
+    public const double MinZoom = 50, MaxZoom = 800;
+
+    /// <summary>
+    /// The frame: the part of the captured region (width x height, after the margins and the
+    /// automatic crop) that is scaled, in region pixels from its top-left corner, as the
+    /// <see cref="FrameMode"/> says. Inside the region it zooms in; beyond it the output shows
+    /// black there (zoom out). At most twice the region per axis, at least one pixel.
+    /// </summary>
+    public static Rectangle ComputeFrame(ScalingOptions options, int width, int height)
+    {
+        if (width <= 0 || height <= 0)
+            return new Rectangle(0, 0, Math.Max(0, width), Math.Max(0, height));
+
+        double left, top, right, bottom;
+        switch (options.FrameMode)
+        {
+            case FrameMode.Corners:
+            case FrameMode.Rectangle:
+                left = Percent(options.FrameLeft) * width;
+                top = Percent(options.FrameTop) * height;
+                right = Percent(options.FrameRight) * width;
+                bottom = Percent(options.FrameBottom) * height;
+                break;
+            case FrameMode.Zoom:
+                double frameWidth = width * 100 / Math.Clamp(options.ZoomX, MinZoom, MaxZoom);
+                double frameHeight = height * 100 / Math.Clamp(options.ZoomY, MinZoom, MaxZoom);
+                double centerX = Percent(options.ZoomCenterX) * width;
+                double centerY = Percent(options.ZoomCenterY) * height;
+                left = centerX - frameWidth / 2;
+                right = centerX + frameWidth / 2;
+                top = centerY - frameHeight / 2;
+                bottom = centerY + frameHeight / 2;
+                break;
+            default:
+                // Margins: the positive ones already cut the region (ApplyCropMargins); the
+                // negative ones add black, half the region at most on each side.
+                left = -Extension(options.CropLeft, width);
+                top = -Extension(options.CropTop, height);
+                right = width + Extension(options.CropRight, width);
+                bottom = height + Extension(options.CropBottom, height);
+                break;
+        }
+
+        int l = (int)Math.Round(Math.Min(left, right)), r = (int)Math.Round(Math.Max(left, right));
+        int t = (int)Math.Round(Math.Min(top, bottom)), b = (int)Math.Round(Math.Max(top, bottom));
+        return Rectangle.FromLTRB(l, t, Math.Max(r, l + 1), Math.Max(b, t + 1));
+
+        static double Percent(double value) => Math.Clamp(double.IsFinite(value) ? value : 0, MinFramePercent, MaxFramePercent) / 100;
+        static double Extension(int margin, int size) => Math.Min(Math.Max(0, -margin), size / 2);
+    }
+
     /// <summary>
     /// Physical shape of the output. "auto": a mode of at most 600 lines more than twice as wide as
     /// high (1280x240, 1920x240, 2560x240, 1920x480i…) is a super-resolution CRT mode, hence 4:3;
@@ -125,12 +185,17 @@ internal static class Geometry
     /// shape), deformed to fill it (stretch), or cut to the frame's shape (crop, the kept part placed
     /// by CropPosition) — or, with CropBarrel, whole with the cut parts bent onto the edges.</item>
     /// </list>
+    /// The picture is the <see cref="ComputeFrame">frame</see> chosen in the captured region
+    /// (<paramref name="regionWidth"/> x <paramref name="regionHeight"/>), black where it goes beyond.
     /// </summary>
-    public static Placement ComputePlacement(ScalingOptions options, int sourceWidth, int sourceHeight, int outputWidth, int outputHeight)
+    public static Placement ComputePlacement(ScalingOptions options, int regionWidth, int regionHeight, int outputWidth, int outputHeight)
     {
+        Rectangle frame = ComputeFrame(options, regionWidth, regionHeight);
+        Rectangle? framed = frame == new Rectangle(0, 0, regionWidth, regionHeight) ? null : frame;
+        int sourceWidth = frame.Width, sourceHeight = frame.Height;
         var whole = new Rectangle(0, 0, Math.Max(0, sourceWidth), Math.Max(0, sourceHeight));
         if (sourceWidth <= 0 || sourceHeight <= 0 || outputWidth <= 0 || outputHeight <= 0)
-            return new Placement(new RectangleF(0, 0, outputWidth, outputHeight), whole, null);
+            return new Placement(new RectangleF(0, 0, outputWidth, outputHeight), whole, null, Frame: framed);
 
         if (!PictureAspect.TryParse(options.AspectRatio, out var aspect))
             aspect = PictureAspect.Original;
@@ -200,12 +265,15 @@ internal static class Geometry
             dest = RectangleF.FromLTRB(outputWidth - dest.Right, dest.Top, outputWidth - dest.Left, dest.Bottom);
         if (options.MirrorY)
             dest = RectangleF.FromLTRB(dest.Left, outputHeight - dest.Bottom, dest.Right, outputHeight - dest.Top);
-        return new Placement(dest, source, barrel, options.MirrorX, options.MirrorY);
+        // Simulated interlacing only when the picture loses lines on the screen: otherwise all of them
+        // fit already, and showing half of them each time would only lose detail and flicker.
+        bool interlaced = options.SimulatedInterlace && source.Height >= 2 && source.Height > dest.Height;
+        return new Placement(dest, source, barrel, options.MirrorX, options.MirrorY, framed, interlaced);
     }
 
     /// <summary>
     /// Region of the captured texture to scale: the client area (or whole window) minus the
-    /// manual crop margins, clamped to the captured content.
+    /// positive margins of the Margins mode, clamped to the captured content.
     /// The capture origin is the window's visible frame (DWM extended frame bounds).
     /// </summary>
     public static Rectangle ComputeSourceRegion(IntPtr hwnd, ScalingOptions options, int contentWidth, int contentHeight)
@@ -224,16 +292,20 @@ internal static class Geometry
         return ApplyCropMargins(options, area.Left - frame.Left, area.Top - frame.Top, area.Right - frame.Left, area.Bottom - frame.Top, contentWidth, contentHeight);
     }
 
-    /// <summary>Region of a captured display to scale: all of it minus the manual crop margins.</summary>
+    /// <summary>Region of a captured display to scale: all of it minus the positive margins of the Margins mode.</summary>
     public static Rectangle ComputeDisplayRegion(ScalingOptions options, int contentWidth, int contentHeight)
         => ApplyCropMargins(options, 0, 0, contentWidth, contentHeight, contentWidth, contentHeight);
 
+    /// <summary>The positive margins of the Margins mode; the negative ones add black (<see cref="ComputeFrame"/>).</summary>
     private static Rectangle ApplyCropMargins(ScalingOptions options, int left, int top, int right, int bottom, int contentWidth, int contentHeight)
     {
-        left += Math.Max(0, options.CropLeft);
-        top += Math.Max(0, options.CropTop);
-        right -= Math.Max(0, options.CropRight);
-        bottom -= Math.Max(0, options.CropBottom);
+        if (options.FrameMode == FrameMode.Margins)
+        {
+            left += Math.Max(0, options.CropLeft);
+            top += Math.Max(0, options.CropTop);
+            right -= Math.Max(0, options.CropRight);
+            bottom -= Math.Max(0, options.CropBottom);
+        }
 
         left = Math.Clamp(left, 0, contentWidth);
         top = Math.Clamp(top, 0, contentHeight);

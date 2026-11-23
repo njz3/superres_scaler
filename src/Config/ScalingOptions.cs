@@ -19,6 +19,25 @@ public enum ScaleMode
     KeepAspect,
 }
 
+/// <summary>
+/// How the frame is chosen in the captured picture. Every mode gives a rectangle that may go
+/// beyond the picture: inside it zooms in, outside it adds black around (zoom out).
+/// </summary>
+public enum FrameMode
+{
+    /// <summary>Pixels removed from each side (CropLeft…); a negative value adds black instead.</summary>
+    Margins,
+
+    /// <summary>The frame's corners in % of the picture (FrameLeft…), from -50 to 150.</summary>
+    Corners,
+
+    /// <summary>A zoom in % (ZoomX, ZoomY) around a centre in % of the picture (ZoomCenterX, ZoomCenterY).</summary>
+    Zoom,
+
+    /// <summary>The corners of <see cref="Corners"/>, drawn on a picture of the source in the profile page.</summary>
+    Rectangle,
+}
+
 /// <summary>How a window is captured and scaled.</summary>
 public class ScalingOptions
 {
@@ -62,13 +81,42 @@ public class ScalingOptions
     /// <summary>Capture only the client area (no title bar or borders).</summary>
     public bool ClientAreaOnly { get; set; } = true;
 
+    /// <summary>How the frame is chosen; the settings of the other modes are kept but unused.</summary>
+    public FrameMode FrameMode { get; set; } = FrameMode.Margins;
+
+    /// <summary>Margins mode: pixels removed from each side; negative = black added (zoom out).</summary>
     public int CropLeft { get; set; }
     public int CropTop { get; set; }
     public int CropRight { get; set; }
     public int CropBottom { get; set; }
 
+    /// <summary>Corners and Rectangle modes: the frame's edges in % of the picture, -50 to 150.</summary>
+    public double FrameLeft { get; set; }
+    public double FrameTop { get; set; }
+    public double FrameRight { get; set; } = 100;
+    public double FrameBottom { get; set; } = 100;
+
+    /// <summary>Zoom mode: 100 = the whole picture, more zooms in, down to 50 (black around).</summary>
+    public double ZoomX { get; set; } = 100;
+    public double ZoomY { get; set; } = 100;
+
+    /// <summary>Zoom mode: the profile page moves both zooms together.</summary>
+    public bool ZoomLinked { get; set; } = true;
+
+    /// <summary>Zoom mode: the frame's centre in % of the picture.</summary>
+    public double ZoomCenterX { get; set; } = 50;
+    public double ZoomCenterY { get; set; } = 50;
+
     /// <summary>Detect and remove black bars (e.g. a 4:3 game pillarboxed in a wide window).</summary>
     public bool AutoCrop { get; set; }
+
+    /// <summary>
+    /// Simulated interlacing: each output refresh shows the source's even lines, then its odd lines,
+    /// each half scaled to the whole picture. On a progressive mode both land on the same lines of
+    /// the tube: thin horizontal details alternate at full contrast instead of being blended.
+    /// Applied only while the source has more lines than the picture on the screen.
+    /// </summary>
+    public bool SimulatedInterlace { get; set; }
 
     public bool CaptureCursor { get; set; }
 
@@ -122,11 +170,22 @@ public class ScalingOptions
         MirrorX = other.MirrorX;
         MirrorY = other.MirrorY;
         ClientAreaOnly = other.ClientAreaOnly;
+        FrameMode = other.FrameMode;
         CropLeft = other.CropLeft;
         CropTop = other.CropTop;
         CropRight = other.CropRight;
         CropBottom = other.CropBottom;
+        FrameLeft = other.FrameLeft;
+        FrameTop = other.FrameTop;
+        FrameRight = other.FrameRight;
+        FrameBottom = other.FrameBottom;
+        ZoomX = other.ZoomX;
+        ZoomY = other.ZoomY;
+        ZoomLinked = other.ZoomLinked;
+        ZoomCenterX = other.ZoomCenterX;
+        ZoomCenterY = other.ZoomCenterY;
         AutoCrop = other.AutoCrop;
+        SimulatedInterlace = other.SimulatedInterlace;
         CaptureCursor = other.CaptureCursor;
         CaptureMethod = other.CaptureMethod;
         VSync = other.VSync;
