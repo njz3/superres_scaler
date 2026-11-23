@@ -50,6 +50,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 39 | 23/11 | L'entrelacement ne devrait pas être activable si la destination a plus de lignes que la source | ⚠️ oui : il ne s'applique que si la source (après recadrage) a plus de lignes que l'image à l'écran, décidé à chaque image ; la boucle suit cet état (plus de redessin à vide) ; carte Placement et journal le disent ; 221 tests, auto-test 63/63 (trames vérifiées en 1920x120, sans effet en 1920x240) ; session réelle 480 lignes : 58,1 présentations/s en 1920x240, 0,1 en 1920x480 ; commité et poussé le 23/11 |
 | 40 | 23/11 | Ne plus citer linuxloader dans l'option Ratio d'aspect, ni dans les remerciements (l'utilisateur est l'auteur de cette fonction dans linuxloader) | ✅ carte « Ratio d'aspect » et carte des remerciements de la page À propos modifiées ; 221 tests ; commité et poussé le 23/11 |
 | 41 | 23/11 | Retirer aussi linuxloader du README et de l'aide de `--aspect` | ✅ sections Réglages et Ratio d'aspect du README, arborescence, aide `--aspect` ; restent des commentaires du code et l'historique de NOTES.md ; 221 tests ; commité et poussé le 23/11 |
+| 42 | 23/11 | Faire une release 0.4.4 et demander à Image borne de la déployer | ⚠️ 0.4.4 (`a63d18d` + numéro de version) : recadrage en quatre modes, entrelacement simulé ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 221 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
 
 ## Releases
 
@@ -67,6 +68,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 13/11 | 0.4.1 | `4bbda5a` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.1-20261113-g4bbda5a-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 195/195 tests ; auto-test sur une copie : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran |
 | 13/11 | 0.4.2 | `6af3747` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.2-20261113-g6af3747-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran ; SHA-256 de l'exe `CFF1529F4CF31EF81D9F685C228FBEC9EA8932DD6F66C28B83EB3C81910080A7` |
 | 23/11 | 0.4.3 | `4ee9df0` + numéro de version (même code que la 0.4.2) | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.3-20261123-g4ee9df0-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34, sans écran virtuel sur ce PC : 56/56, 46 + 1 SKIP en mode 1809 simulé, 58/58 avec le plein écran (voir le journal) ; SHA-256 de l'exe `BEBB7917C2ACED106DC65EBBE677C28D58F0101B5198FC83E0F0F33751F550C3` |
+| 23/11 | 0.4.4 | `a63d18d` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurseleases` (`superres-scaler-0.4.4-20261123-ga63d18d-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 221/221 tests ; auto-test sur une copie sous .NET 8.0.34, écran virtuel présent : 63/63, 53 + 1 SKIP en mode 1809 simulé (trois fois de suite, après un premier passage en échec, voir le journal), 65/65 avec le plein écran ; SHA-256 de l'exe `447FFB71526C5FC1A88B09A9C908F2D7BEDC57276A0F4F69A64C9FFCFE70C8E6` |
 
 Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
@@ -355,3 +357,11 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 - Demande 39 : l'option n'agit que si la partie lue de la source a plus de lignes que l'image à l'écran
   (`Placement.Interlaced`) ; sinon toutes les lignes s'affichent et une trame sur deux ne ferait que perdre du
   détail. La boucle se cale sur ce dernier état et non sur l'option, sans quoi elle redessinerait sans arrêt.
+
+### Release 0.4.4 (23/11)
+- Contenu : recadrage en quatre modes (marges, quatre coins, zoom et centre, rectangle sur l'image) qui peut déborder
+  de l'image, entrelacement simulé, linuxloader retiré de l'interface ; projet déplacé dans `src/` (sans effet sur
+  l'exe).
+- Auto-test en mode 1809 simulé : premier passage à 29 + 24 échecs, toujours sur les vérifications qui lisent l'écran
+  (mire lue blanche), puis trois passages de suite à 53 + 1 SKIP. Le contrôle avec l'exe de la 0.4.3, lancé juste
+  après, a échoué de la même façon (27 + 19) : comme le matin, c'est ce qui était à l'écran, pas la version.
