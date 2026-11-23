@@ -107,12 +107,15 @@ internal static class Program
     /// <summary>Prints to the parent console when started from one, otherwise shows a message box.</summary>
     private static void ShowText(string text, bool error)
     {
-        // Redirected output first: attaching to the console would bypass the redirection. Written as
-        // UTF-8 by a writer of its own: setting Console.OutputEncoding sets the console's code page,
-        // which .NET 8 refuses with an IOException when there is no console (a redirected WinExe).
-        if (Kernel32.IsOutputRedirected())
+        // Redirected output first: attaching to the console would bypass the redirection. Written by a
+        // writer of its own: setting Console.OutputEncoding sets the console's code page, which .NET 8
+        // refuses with an IOException when there is no console (a redirected WinExe).
+        var kind = Kernel32.GetStandardOutput();
+        if (kind != Kernel32.StandardOutput.None)
         {
-            using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false));
+            var stream = Console.OpenStandardOutput(); // before looking at the parent's console
+            int? console = kind == Kernel32.StandardOutput.Pipe ? Kernel32.ParentConsoleCodePage() : null;
+            using var output = new StreamWriter(stream, RedirectedEncoding(kind, console, (int)Kernel32.GetACP()));
             output.WriteLine();
             output.WriteLine(text);
             return;
@@ -124,5 +127,34 @@ internal static class Program
             return;
         }
         MessageBox.Show(text, "SuperResScaler", MessageBoxButtons.OK, error ? MessageBoxIcon.Error : MessageBoxIcon.Information);
+    }
+
+    /// <summary>
+    /// The encoding a redirected output is read with. A new file: UTF-8 with its BOM, which Notepad and
+    /// Windows PowerShell's Get-Content recognize (without it, they read « Écran » as « Ã‰cran »). The end
+    /// of a file: UTF-8 without a BOM in the middle. A pipe: the reader decodes with its console's code
+    /// page (<paramref name="consoleCodePage"/>), or the ANSI one when it has no console, as Windows
+    /// PowerShell over WinRM does.
+    /// </summary>
+    internal static System.Text.Encoding RedirectedEncoding(Kernel32.StandardOutput kind, int? consoleCodePage, int ansiCodePage)
+    {
+        if (kind == Kernel32.StandardOutput.NewFile)
+            return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        if (kind != Kernel32.StandardOutput.Pipe)
+            return new System.Text.UTF8Encoding(false);
+        int codePage = consoleCodePage ?? ansiCodePage;
+        if (codePage == 65001)
+            return new System.Text.UTF8Encoding(false);
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            var encoding = (System.Text.Encoding)System.Text.Encoding.GetEncoding(codePage).Clone();
+            encoding.EncoderFallback = new System.Text.EncoderReplacementFallback("?");
+            return encoding;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return new System.Text.UTF8Encoding(false);
+        }
     }
 }

@@ -397,18 +397,64 @@ internal static class Kernel32
     [DllImport(Dll)] public static extern IntPtr GetStdHandle(int handle);
     [DllImport(Dll)] public static extern uint GetFileType(IntPtr handle);
 
+    [DllImport(Dll)] public static extern bool FreeConsole();
+    [DllImport(Dll)] public static extern uint GetConsoleOutputCP();
+    [DllImport(Dll)] public static extern uint GetACP();
+    [DllImport(Dll, SetLastError = true)] public static extern bool SetFilePointerEx(IntPtr file, long distance, out long newPosition, uint moveMethod);
+
     public const int STD_OUTPUT_HANDLE = -11;
     public const uint FILE_TYPE_DISK = 1;
     public const uint FILE_TYPE_PIPE = 3;
+    public const uint FILE_CURRENT = 1;
 
-    /// <summary>True when the standard output goes to a file or a pipe ("> modes.txt", "| more").</summary>
-    public static bool IsOutputRedirected()
+    /// <summary>Where the standard output goes.</summary>
+    public enum StandardOutput
+    {
+        /// <summary>Nowhere: a WinExe started from Explorer, or a console (attached later).</summary>
+        None,
+
+        /// <summary>A file written from its start ("> modes.txt").</summary>
+        NewFile,
+
+        /// <summary>The end of an existing file (">> modes.txt").</summary>
+        AppendedFile,
+
+        /// <summary>Another program ("| more", PowerShell capturing it, WinRM).</summary>
+        Pipe,
+    }
+
+    public static StandardOutput GetStandardOutput()
     {
         IntPtr handle = GetStdHandle(STD_OUTPUT_HANDLE);
         if (handle == IntPtr.Zero || handle == new IntPtr(-1))
-            return false;
-        uint type = GetFileType(handle);
-        return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+            return StandardOutput.None;
+        return GetFileType(handle) switch
+        {
+            FILE_TYPE_PIPE => StandardOutput.Pipe,
+            FILE_TYPE_DISK => SetFilePointerEx(handle, 0, out long position, FILE_CURRENT) && position > 0
+                ? StandardOutput.AppendedFile
+                : StandardOutput.NewFile,
+            _ => StandardOutput.None,
+        };
+    }
+
+    /// <summary>True when the standard output goes to a file or a pipe ("> modes.txt", "| more").</summary>
+    public static bool IsOutputRedirected() => GetStandardOutput() != StandardOutput.None;
+
+    /// <summary>The output code page of the parent's console, null when it has none (a service, WinRM).</summary>
+    public static int? ParentConsoleCodePage()
+    {
+        if (!AttachConsole(ATTACH_PARENT_PROCESS))
+            return null;
+        try
+        {
+            uint codePage = GetConsoleOutputCP();
+            return codePage == 0 ? null : (int)codePage;
+        }
+        finally
+        {
+            FreeConsole();
+        }
     }
 }
 

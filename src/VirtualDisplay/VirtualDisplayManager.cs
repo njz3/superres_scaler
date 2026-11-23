@@ -9,8 +9,13 @@ using SuperResScaler.Native;
 
 namespace SuperResScaler.VirtualDisplay;
 
-/// <summary>What is known about the virtual display.</summary>
-internal sealed record VirtualDisplayStatus(bool DriverAvailable, bool DeviceInstalled, MonitorInfo? Monitor, int Problem = 0)
+/// <summary>
+/// What is known about the virtual display. <paramref name="ServiceSession"/>: read from session 0 (a
+/// service, WinRM), which does not see the displays of the user's session, so <paramref name="Monitor"/>
+/// is null there even when the virtual display is shown.
+/// </summary>
+internal sealed record VirtualDisplayStatus(bool DriverAvailable, bool DeviceInstalled, MonitorInfo? Monitor, int Problem = 0,
+                                            bool ServiceSession = false)
 {
     /// <summary>Device Manager's code 43: Windows stopped the device after its driver crashed too often.</summary>
     public const int StoppedProblem = 43;
@@ -24,6 +29,9 @@ internal sealed record VirtualDisplayStatus(bool DriverAvailable, bool DeviceIns
                    + "Détruisez-le puis recréez-le, ou redémarrez le PC";
         if (DeviceInstalled && Problem != 0)
             return $"Créé, mais en erreur (code {Problem} du Gestionnaire de périphériques) : détruisez-le et recréez-le";
+        if (DeviceInstalled && ServiceSession)
+            return "Créé et sans erreur ; lancé depuis la session 0 (service, WinRM), SuperResScaler ne voit pas les écrans "
+                   + "de la session de l'utilisateur : son affichage n'est pas vérifiable d'ici";
         if (DeviceInstalled)
             return "Créé, mais Windows ne l'affiche pas : activez-le dans Paramètres > Affichage, ou détruisez-le et recréez-le";
         return DriverAvailable ? "Absent" : "Absent, et cet exe a été compilé sans le pilote d'écran virtuel";
@@ -66,7 +74,8 @@ internal static class VirtualDisplayManager
             installed = false;
         }
         var monitor = MonitorInfo.GetAll().FirstOrDefault(m => m.IsVirtual);
-        return new VirtualDisplayStatus(EmbeddedDriver.IsAvailable, installed || monitor != null, monitor, problem);
+        bool serviceSession = Process.GetCurrentProcess().SessionId == 0;
+        return new VirtualDisplayStatus(EmbeddedDriver.IsAvailable, installed || monitor != null, monitor, problem, serviceSession);
     }
 
     public static VirtualDisplaySettings LoadSettings() => VirtualDisplaySettings.Load(SettingsPath);

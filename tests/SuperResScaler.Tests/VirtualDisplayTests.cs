@@ -195,6 +195,40 @@ public class VirtualDisplayTests
         Assert.StartsWith("Créé, mais Windows ne l'affiche pas", new VirtualDisplayStatus(true, true, null).Describe());
     }
 
+    [Fact]
+    public void WritesRedirectedOutputAsItsReaderDecodesIt()
+    {
+        const string text = "Écran virtuel : Créé";
+        // "> modes.txt": UTF-8 with its BOM, read right by Notepad and Windows PowerShell's Get-Content.
+        var file = Program.RedirectedEncoding(Kernel32.StandardOutput.NewFile, null, 1252);
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, file.GetPreamble());
+        Assert.Equal(text, file.GetString(file.GetBytes(text)));
+        // ">> modes.txt": no BOM in the middle of the file.
+        Assert.Empty(Program.RedirectedEncoding(Kernel32.StandardOutput.AppendedFile, null, 1252).GetPreamble());
+        // A pipe without a console (WinRM): the ANSI code page, which Windows PowerShell decodes it with.
+        var winrm = Program.RedirectedEncoding(Kernel32.StandardOutput.Pipe, null, 1252);
+        Assert.Equal(1252, winrm.CodePage);
+        Assert.Equal(new byte[] { 0xC9 }, winrm.GetBytes("É"));
+        // A pipe in a console: the console's code page (850 here), UTF-8 after chcp 65001.
+        Assert.Equal(850, Program.RedirectedEncoding(Kernel32.StandardOutput.Pipe, 850, 1252).CodePage);
+        Assert.Equal(65001, Program.RedirectedEncoding(Kernel32.StandardOutput.Pipe, 65001, 1252).CodePage);
+        // A character the code page lacks becomes "?", not an exception.
+        Assert.Equal("?", winrm.GetString(winrm.GetBytes("→")));
+    }
+
+    [Fact]
+    public void DoesNotGuessTheVirtualDisplayFromSessionZero()
+    {
+        // From a service or WinRM, the user's displays are out of sight: the device's state only.
+        string fromService = new VirtualDisplayStatus(true, true, null, ServiceSession: true).Describe();
+        Assert.StartsWith("Créé et sans erreur", fromService);
+        Assert.Contains("session 0", fromService);
+        Assert.DoesNotContain("ne l'affiche pas", fromService);
+        // A device error is still seen from there.
+        Assert.Contains("code 43", new VirtualDisplayStatus(true, true, null, VirtualDisplayStatus.StoppedProblem, ServiceSession: true).Describe());
+        Assert.Equal("Absent", new VirtualDisplayStatus(true, false, null, ServiceSession: true).Describe());
+    }
+
     private static MonitorInfo Display(int number, string name, string id)
         => new(number, $@"\\.\DISPLAY{number}", name, id, new RECT(0, 0, 640, 480), number == 1, IntPtr.Zero);
 

@@ -50,7 +50,8 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 39 | 23/11 | L'entrelacement ne devrait pas être activable si la destination a plus de lignes que la source | ⚠️ oui : il ne s'applique que si la source (après recadrage) a plus de lignes que l'image à l'écran, décidé à chaque image ; la boucle suit cet état (plus de redessin à vide) ; carte Placement et journal le disent ; 221 tests, auto-test 63/63 (trames vérifiées en 1920x120, sans effet en 1920x240) ; session réelle 480 lignes : 58,1 présentations/s en 1920x240, 0,1 en 1920x480 ; commité et poussé le 23/11 |
 | 40 | 23/11 | Ne plus citer linuxloader dans l'option Ratio d'aspect, ni dans les remerciements (l'utilisateur est l'auteur de cette fonction dans linuxloader) | ✅ carte « Ratio d'aspect » et carte des remerciements de la page À propos modifiées ; 221 tests ; commité et poussé le 23/11 |
 | 41 | 23/11 | Retirer aussi linuxloader du README et de l'aide de `--aspect` | ✅ sections Réglages et Ratio d'aspect du README, arborescence, aide `--aspect` ; restent des commentaires du code et l'historique de NOTES.md ; 221 tests ; commité et poussé le 23/11 |
-| 42 | 23/11 | Faire une release 0.4.4 et demander à Image borne de la déployer | ⚠️ 0.4.4 (`a63d18d` + numéro de version) : recadrage en quatre modes, entrelacement simulé ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 221 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
+| 42 | 23/11 | Faire une release 0.4.4 et demander à Image borne de la déployer | ✅ déployée sur les deux bornes, « started on .NET 8.0.30 » vérifié ; 0.4.4 (`a63d18d` + numéro de version) : recadrage en quatre modes, entrelacement simulé ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 221 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; `0a0398d` |
+| 43 | 23/11 | Corriger les deux défauts de `--virtual-modes` vus par WinRM : état de l'écran virtuel faux en session 0, accents en double encodage | ⚠️ en session 0, l'état dit que l'affichage n'est pas vérifiable d'ici ; sortie redirigée écrite comme son lecteur la décode (fichier neuf : UTF-8 avec BOM ; ajout : sans BOM ; tube : page de la console, ANSI sans console) ; 223 tests ; essais réels : fichier, ajout, tube Windows PowerShell 5.1 en console 850 et pwsh ; pas essayé en session 0 ni par WinRM ; commité et poussé le 23/11 |
 
 ## Releases
 
@@ -365,3 +366,28 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
 - Auto-test en mode 1809 simulé : premier passage à 29 + 24 échecs, toujours sur les vérifications qui lisent l'écran
   (mire lue blanche), puis trois passages de suite à 53 + 1 SKIP. Le contrôle avec l'exe de la 0.4.3, lancé juste
   après, a échoué de la même façon (27 + 19) : comme le matin, c'est ce qui était à l'écran, pas la version.
+
+### 0.4.4 sur les bornes (23/11)
+- Déployée par Image borne avec l'accord du propriétaire, sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` :
+  exe (SHA-256 vérifié avant copie) et 9 shaders remplacés (MD5 vérifiés), `settings.json` inchangé (MD5) ; 0.4.2
+  sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.4.2-avant-0.4.4-20261123`.
+- SuperResScaler tournait, lancé dans la session du joueur : arrêté pendant la pose (accord du propriétaire), relancé
+  sans argument par la tâche du banc (réactivée sur Racecab2 par le propriétaire).
+- « SuperResScaler 0.4.4.0 started on .NET 8.0.30, Windows 10.0.17763.0 » sur les deux bornes (14:20 et 14:22).
+- Deux défauts relevés par Image borne avec `--virtual-modes` lancé par WinRM (session 0) :
+  - « Écran virtuel : Créé, mais Windows ne l'affiche pas » alors que l'écran virtuel affiche bien la session du
+    joueur : depuis la session 0, l'énumération des écrans ne voit pas ceux de la session interactive ;
+  - accents en double encodage (« Ã‰cran ») dans la sortie redirigée : écrite en UTF-8 sans BOM, relue comme ANSI.
+- Racecab1 est ensuite passée en 1280x960 (`SetCRT31_1280x960i`) à la demande du propriétaire.
+
+### Sortie de --virtual-modes en session 0 et redirigée (demande 43)
+- Session 0 (service, WinRM) : `VirtualDisplayStatus.ServiceSession` (`Process.SessionId == 0`) ; l'état du
+  périphérique (créé, code d'erreur, absent) reste lu par SetupAPI, mais l'affichage n'est plus déclaré absent.
+- Encodage de la sortie redirigée (`Program.RedirectedEncoding`) : fichier neuf en UTF-8 avec BOM, fin de fichier
+  (`>>`, position non nulle) en UTF-8 sans BOM, tube dans la page de la console du parent (`AttachConsole` puis
+  `GetConsoleOutputCP`, après avoir ouvert la sortie), ou la page ANSI quand il n'a pas de console, caractères
+  absents remplacés par « ? ».
+- Essais sur ce PC : `> fichier` commence par EF BB BF et `Get-Content` de Windows PowerShell 5.1 lit « Écran » ;
+  `>>` n'ajoute pas de second BOM ; tube lu par Windows PowerShell 5.1 dans une console 850 : « Écran » (la 0.4.4
+  donnait « ├ëcran ») ; tube pwsh (console 65001) correct. Pas reproduit ici : PowerShell sans console (WinRM),
+  couvert par un test unitaire du choix de la page ANSI.

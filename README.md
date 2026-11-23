@@ -205,6 +205,14 @@ miroir, etc.
 - **En ligne de commande** : `--virtual-create`, `--virtual-destroy`, `--virtual-modes`,
   `--virtual-add 1024x384@57.5`, `--virtual-remove 1280x240@60`, et `--display virtuel` pour le
   capturer.
+- **Depuis un service ou WinRM** (session 0), SuperResScaler ne voit pas les écrans de la session
+  de l'utilisateur : `--virtual-modes` y donne l'état du périphérique (créé, en erreur, absent),
+  mais pas s'il est affiché.
+
+Le texte de `--help`, `--list-modes` et `--virtual-modes` redirigé est écrit comme son lecteur le
+décode : un nouveau fichier (`> modes.txt`) en UTF-8 avec BOM (lu correctement par le Bloc-notes et
+`Get-Content`), la fin d'un fichier (`>>`) en UTF-8 sans BOM, un tube (`|`, PowerShell) dans la
+page de codes de la console, ou la page ANSI sans console (PowerShell par WinRM).
 
 Les modes sont dans `C:\VirtualDisplayDriver\vdd_settings.xml`, l'emplacement où le pilote les lit.
 Le premier est celui d'un écran qui vient d'être créé. Le fichier écrit par SuperResScaler n'a pas
