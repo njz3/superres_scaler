@@ -34,7 +34,12 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 23 | 13/11 | Optimiser capture et affichage pour rester à 60 i/s quand le jeu tourne à 60 (une image de retard acceptable, pas de perte d'images) | ⚠️ boucle de rendu au rythme de la source, présentation sans attente du rafraîchissement, priorité GPU haute ; mesuré ici avec une source à 60 i/s : 59,8 sur 59,8 en duplication (57,9 avant), 59,6 en aperçu (40,6 avant) ; 195 tests, auto-tests complets ; `4bbda5a`, pas encore essayé sur une borne |
 | 24 | 13/11 | Faire une release 0.4.1 et demander à Image borne de la déployer | ✅ déployée sur les deux bornes, 60 i/s sans perte en démo ; en course, pertes sous charge GPU (journal) ; 0.4.1 (`4bbda5a` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 195 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
 | 25 | 13/11 | Sur les bornes, détruire l'écran virtuel a mis le PHL en 1920x1080 : pourquoi ? Puis : que « Détruire » remette les autres écrans dans leur mode d'avant | ⚠️ cause : Windows applique la configuration qu'il garde pour « PHL seul » ; « Créer » et « Détruire » notent le mode des vrais écrans, puis le remettent et l'enregistrent ; 197 tests ; essayé ici dans les deux sens (UAC), pas sur une borne ; `6af3747`, poussé |
-| 26 | 13/11 | Faire une release 0.4.2 et demander à Image borne de la déployer | ⚠️ 0.4.2 (`6af3747` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 197 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
+| 26 | 13/11 | Faire une release 0.4.2 et demander à Image borne de la déployer | ✅ déployée sur les deux bornes, « started on .NET 8.0.30 » vérifié ; 0.4.2 (`6af3747` + numéro de version), exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 197 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; installée par Image borne sur les deux bornes (SHA-256 vérifié, 0.4.1 sauvegardée) ; l'écran virtuel n'est plus sur les bornes |
+| 27 | 17/11 | Faire du ménage | ✅ mémoire de la session mise à jour, fichiers temporaires supprimés (~830 Mo) ; `releases` : ne restent que l'archive 0.4.2 et un dossier déplié qui n'est pas de cette session (laissé) |
+| 28 | 20/11 | Ajouter des modes entrelacés à l'écran virtuel (1280x480i, 1024x768i, 1280x960i, 1920x1080i) ? | ✅ réponse : impossible avec Virtual Display Driver, qui crée tous ses modes en progressif et dont `vdd_settings.xml` n'a pas d'option d'entrelacement ; IddCx ne dit pas si Windows l'accepterait ; les mêmes tailles existent en progressif |
+| 29 | 20/11 | Résolutions disponibles sur l'écran virtuel | ✅ 10 modes dans `vdd_settings.xml` ; l'écran virtuel n'existe plus sur ce PC (pas retiré par cette session) |
+| 30 | 20/11 | Patcher les pilotes NVIDIA récents pour sortir de l'entrelacé ? | ✅ réponse : sur Pascal, entrelacé jusqu'au pilote 537.58 (rapport d'utilisateur, forum NVIDIA) ; patcher `nvlddmkm.sys` casse sa signature ; Turing et suivants : pas d'entrelacé sous Windows. Image borne : pilote 582.66 sur les deux bornes, PHL débranché, écran virtuel seul écran actif (1920x240) |
+| 31 | 23/11 | Ajouter 1024x384 et 512x384 à 60 Hz à l'écran virtuel | ✅ ajoutés au `vdd_settings.xml` de ce PC (12 modes), pris en compte à la prochaine création ; bornes non modifiées |
 
 ## Releases
 
@@ -60,6 +65,10 @@ Le 13/11, cette version de test a connu quatre archives :
 Les trois premières sont supprimées. Un dossier extrait de l'archive `26d22d7` était apparu dans `emulateurs\releases`
 à 09:39, créé ni par cette session ni par Image borne. Son exe vise .NET 10, qui manque aux bornes : il a été mis à
 la corbeille de Windows, à la demande de l'utilisateur (demande 20).
+
+Le 17/11, `emulateurs\releases` ne contient plus que l'archive 0.4.2 et un dossier qui en est déplié (créé le 14/11
+à 22:52, hors de cette session, et lancé une fois : `SuperResScaler.log` et `settings.json` à côté de l'exe) ; les
+archives 0.2.1, 0.3.0, 0.4.0, 0.4.1 et la version de test `ga4f623b` en ont été retirées.
 
 L'archive du 10/11 suit un autre nom (`superres-scaler-0.3.0-20261110-g2230d17-njz3-windows-x64.zip`, avec un
 dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer » : faux pour l'archive du 12/11.
@@ -260,3 +269,22 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
     l'écran virtuel est recréé (`\\.\DISPLAY18`, 640x480).
 - Pour les bornes, d'ici une nouvelle version : régler le PHL après la destruction, par exemple
   `SetResolution RESTORE -noprompt` (mode du fichier témoin, enregistré) ; les lanceurs TP le font après chaque jeu.
+
+### 0.4.2 sur les bornes, et retrait de l'écran virtuel (13/11)
+- Installée par Image borne, avec l'accord du propriétaire, sur Racecab1 et Racecab2 dans `C:\Racecab\Utils\superres` :
+  exe (SHA-256 `CFF1529F…`, 0.4.2+6af3747) et `Shaders` (9 fichiers) remplacés, `settings.json` gardé ; 0.4.1
+  sauvegardée dans `C:\Racecab\_sauvegardes\superres-0.4.1-avant-0.4.2-20261113`.
+- Contrôle à 17:06 sur les deux bornes : « SuperResScaler 0.4.2.0 started on .NET 8.0.30, Windows 10.0.17763.0 » ;
+  `--virtual-modes` lit `vdd_settings.xml` (640x480@60, 320x240@60), aucun processus restant ; le périphérique de
+  l'écran virtuel n'existe plus (pas de `ROOT\DISPLAY\0000`).
+- Avec l'écran virtuel en principal et le PHL en secondaire, deux Raw Thrills échouent sur les deux bornes, quels que
+  soient la résolution, le plugin FFB ou la version de TeknoParrot :
+  - Cars (sdaemon.exe, d3d9) n'ouvre jamais de fenêtre (SuperResScaler : « No matching window found ») ;
+  - Snow Cross plante avant sa fenêtre (appel à l'adresse 0 dans sdaemon.exe, d'après son `errorlog.txt`).
+- Le propriétaire a retiré l'écran virtuel vers 16:15 (avec la 0.4.1 : le PHL s'est retrouvé en 1920x1080, ce que la
+  0.4.2 évite). PHL seul : les deux jeux démarrent, en 640x480 comme en 1920x1080 ; le plantage de Snow Cross vers
+  15 s de course reste, sans rapport avec l'affichage (il a lieu aussi sans le plugin).
+- Les autres Raw Thrills tournaient avec l'écran virtuel, avec des pertes en course (FNF SuperBikes jusqu'à 29/s,
+  Cruis'n Blast vers 31/s au plus). Sans lui, ils prennent leur propre mode sur le PHL (Snow Cross en 1366x768) et
+  `SetResolution RESTORE` remet 640x480 à la sortie. Image borne essaie les 11 Raw Thrills ainsi.
+- Si l'écran virtuel revient sur les bornes pour SuperResScaler, revérifier d'abord Cars et Snow Cross.
