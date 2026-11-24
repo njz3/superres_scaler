@@ -53,6 +53,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 42 | 23/11 | Faire une release 0.4.4 et demander à Image borne de la déployer | ✅ déployée sur les deux bornes, « started on .NET 8.0.30 » vérifié ; 0.4.4 (`a63d18d` + numéro de version) : recadrage en quatre modes, entrelacement simulé ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 221 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; `0a0398d` |
 | 43 | 23/11 | Corriger les deux défauts de `--virtual-modes` vus par WinRM : état de l'écran virtuel faux en session 0, accents en double encodage | ⚠️ en session 0, l'état dit que l'affichage n'est pas vérifiable d'ici ; sortie redirigée écrite comme son lecteur la décode (fichier neuf : UTF-8 avec BOM ; ajout : sans BOM ; tube : page de la console, ANSI sans console) ; 223 tests ; essais réels : fichier, ajout, tube Windows PowerShell 5.1 en console 850 et pwsh ; pas essayé en session 0 ni par WinRM ; commité et poussé le 23/11 |
 | 44 | 24/11 | 1024x384 et 512x384 à 60 Hz sont-ils dans les modes par défaut de l'écran virtuel ? Puis : les ajouter | ✅ ils n'y étaient qu'à 57,5 Hz ; ajoutés juste après (1024x384@60, 512x384@60) dans `CabinetModes`, utilisés à la création d'un `vdd_settings.xml` et par « Modes des bornes » ; carte et README mis à jour ; 223 tests ; commité et poussé le 24/11 |
+| 45 | 24/11 | Faire une release 0.4.5 et demander à Image borne de la déployer | ⚠️ 0.4.5 (`76f9e22` + numéro de version) : `--virtual-modes` juste en session 0 et accents de la sortie redirigée, 512x384 et 1024x384 à 60 Hz dans les modes par défaut ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 223 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
 
 ## Releases
 
@@ -71,6 +72,7 @@ Archives dans `E:\Arcade\emulateurs\dev\release`, nommées
 | 13/11 | 0.4.2 | `6af3747` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.2-20261113-g6af3747-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34 : 60/60, 50 + 1 SKIP en mode 1809 simulé, 62/62 avec le plein écran ; SHA-256 de l'exe `CFF1529F4CF31EF81D9F685C228FBEC9EA8932DD6F66C28B83EB3C81910080A7` |
 | 23/11 | 0.4.3 | `4ee9df0` + numéro de version (même code que la 0.4.2) | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurs\releases` (`superres-scaler-0.4.3-20261123-g4ee9df0-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 197/197 tests ; auto-test sur une copie sous .NET 8.0.34, sans écran virtuel sur ce PC : 56/56, 46 + 1 SKIP en mode 1809 simulé, 58/58 avec le plein écran (voir le journal) ; SHA-256 de l'exe `BEBB7917C2ACED106DC65EBBE677C28D58F0101B5198FC83E0F0F33751F550C3` |
 | 23/11 | 0.4.4 | `a63d18d` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurseleases` (`superres-scaler-0.4.4-20261123-ga63d18d-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 221/221 tests ; auto-test sur une copie sous .NET 8.0.34, écran virtuel présent : 63/63, 53 + 1 SKIP en mode 1809 simulé (trois fois de suite, après un premier passage en échec, voir le journal), 65/65 avec le plein écran ; SHA-256 de l'exe `447FFB71526C5FC1A88B09A9C908F2D7BEDC57276A0F4F69A64C9FFCFE70C8E6` |
+| 24/11 | 0.4.5 | `76f9e22` + numéro de version | dépend du .NET 8 Desktop Runtime (ou plus récent), sur ce PC dans `emulateurseleases` (`superres-scaler-0.4.5-20261124-g76f9e22-njz3-windows-x64.zip`) | exe, `Shaders/` | 7,4 Mo | 223/223 tests ; auto-test sur une copie sous .NET 8.0.34 : 63/63, 53 + 1 SKIP en mode 1809 simulé (trois fois de suite, après un premier passage en échec), 65/65 avec le plein écran ; SHA-256 de l'exe `064A46BEE7A8566F242849862C32997D082DD803468CCFACF0A5C43611A06885` |
 
 Le 13/11, cette version de test a connu quatre archives :
 - une archive autonome de 50,6 Mo (`a2c6933`), celle qu'Image borne a essayée sur Racecab1 ;
@@ -392,3 +394,11 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   `>>` n'ajoute pas de second BOM ; tube lu par Windows PowerShell 5.1 dans une console 850 : « Écran » (la 0.4.4
   donnait « ├ëcran ») ; tube pwsh (console 65001) correct. Pas reproduit ici : PowerShell sans console (WinRM),
   couvert par un test unitaire du choix de la page ANSI.
+
+### Release 0.4.5 (24/11)
+- Contenu depuis la 0.4.4 : `--virtual-modes` en session 0 et encodage de la sortie redirigée (`aad1818`), 512x384
+  et 1024x384 à 60 Hz dans les modes par défaut (`76f9e22`).
+- Auto-test en mode 1809 simulé : le premier passage échoue encore (29 + 24, mire lue blanche), puis trois passages
+  de suite réussissent. C'est la quatrième fois (23/11 matin, 0.4.4, 0.4.5, et un contrôle 0.4.3) : toujours les
+  vérifications qui lisent l'écran en duplication, jamais en mode normal. Cause pas établie ; le contrôle avec la
+  0.4.4 n'a pas pu servir (son dossier de test avait perdu `Shaders`).
