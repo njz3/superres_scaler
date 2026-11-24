@@ -53,11 +53,15 @@ internal readonly partial record struct VirtualMode(int Width, int Height, doubl
 /// </summary>
 internal sealed class VirtualDisplaySettings
 {
-    /// <summary>The modes of the cabinets' C:\Racecab\Utils\SetCRT*.bat, the 24 kHz ones at 57.5 Hz only.</summary>
+    /// <summary>
+    /// The modes of the cabinets' C:\Racecab\Utils\SetCRT*.bat, the 24 kHz ones at 57.5 Hz as there,
+    /// followed by the same sizes at 60 Hz (user, 2026-11-24).
+    /// </summary>
     public static readonly IReadOnlyList<VirtualMode> CabinetModes =
     [
         new(640, 480, 60), new(320, 240, 60), new(1280, 240, 60), new(1920, 240, 60), new(1280, 480, 60),
-        new(512, 384, 57.5), new(1024, 384, 57.5), new(1024, 768, 60), new(1280, 960, 60), new(1920, 1080, 60),
+        new(512, 384, 57.5), new(1024, 384, 57.5), new(1024, 384, 60), new(512, 384, 60),
+        new(1024, 768, 60), new(1280, 960, 60), new(1920, 1080, 60),
     ];
 
     private readonly XDocument _document;

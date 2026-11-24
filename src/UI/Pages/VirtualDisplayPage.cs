@@ -56,7 +56,7 @@ internal sealed class VirtualDisplayPage : Page
         var addCard = AddCard(Theme.GlyphAdd, "Ajouter un mode", "Largeur, hauteur et fréquence (décimales acceptées, comme 57,5 Hz)",
             UiFactory.Button("Ajouter", async (_, _) => await AddModeAsync()));
         addCard.AddDetail(UiFactory.Row(UiFactory.Text("Largeur"), _width, UiFactory.Text("Hauteur"), _height, UiFactory.Text("Fréquence (Hz)"), _frequency));
-        AddCard(Theme.GlyphGame, "Modes des bornes", "320x240, 640x480, 1280x240, 1920x240, 1280x480, 1024x768, 1280x960, 1920x1080 à 60 Hz ; 512x384 et 1024x384 à 57,5 Hz",
+        AddCard(Theme.GlyphGame, "Modes des bornes", "320x240, 640x480, 1280x240, 1920x240, 1280x480, 1024x768, 1280x960, 1920x1080 à 60 Hz ; 512x384 et 1024x384 à 57,5 et 60 Hz",
             UiFactory.Button("Ajouter", async (_, _) => await RunAsync(() => VirtualDisplayManager.AddModes(VirtualDisplaySettings.CabinetModes), refreshDelay: 800)));
         _globalsCard = AddCard(Theme.GlyphInfo, "Fréquences globales", null);
         _globalsCard.Visible = false;

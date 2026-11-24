@@ -102,6 +102,11 @@ public class VirtualDisplayTests
         Assert.Equal(new VirtualMode(640, 480, 60), settings.Modes[0]);
         Assert.Contains(new VirtualMode(1024, 384, 57.5), settings.Modes);
         Assert.Equal(settings.Modes, settings.EffectiveModes());
+
+        // The 384-line modes at 57.5 Hz, then the same sizes at 60 Hz just after them.
+        int first = settings.Modes.FindIndex(m => m.SameAs(new VirtualMode(512, 384, 57.5)));
+        Assert.Equal([new VirtualMode(512, 384, 57.5), new VirtualMode(1024, 384, 57.5), new VirtualMode(1024, 384, 60), new VirtualMode(512, 384, 60)],
+                     settings.Modes.Skip(first).Take(4));
     }
 
     [Fact]

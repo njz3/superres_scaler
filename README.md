@@ -217,7 +217,8 @@ page de codes de la console, ou la page ANSI sans console (PowerShell par WinRM)
 Les modes sont dans `C:\VirtualDisplayDriver\vdd_settings.xml`, l'emplacement où le pilote les lit.
 Le premier est celui d'un écran qui vient d'être créé. Le fichier écrit par SuperResScaler n'a pas
 de fréquence globale : le pilote ajouterait chacune d'elles à toutes les tailles, ce qui créerait par
-exemple un 1024x384 à 60 Hz que les bornes n'ont pas. Windows arrondit les fréquences : 57,5 Hz
+exemple un 1920x1080 à 57,5 Hz que les bornes n'ont pas. Les « modes des bornes » ont 512x384 et
+1024x384 à 57,5 Hz, comme les scripts `SetCRT*.bat`, et aussi à 60 Hz. Windows arrondit les fréquences : 57,5 Hz
 apparaît en 58 (`SetResolution -f 58`). Chaque relecture des modes donne un nouveau `\\.\DISPLAYn`
 à l'écran virtuel ; les profils, qui gardent l'identifiant du moniteur, n'en sont pas gênés.
 
