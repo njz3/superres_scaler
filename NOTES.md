@@ -54,6 +54,7 @@ Légende : ✅ fait et vérifié · 🔄 en cours · ⏳ à faire · ⚠️ fait
 | 43 | 23/11 | Corriger les deux défauts de `--virtual-modes` vus par WinRM : état de l'écran virtuel faux en session 0, accents en double encodage | ⚠️ en session 0, l'état dit que l'affichage n'est pas vérifiable d'ici ; sortie redirigée écrite comme son lecteur la décode (fichier neuf : UTF-8 avec BOM ; ajout : sans BOM ; tube : page de la console, ANSI sans console) ; 223 tests ; essais réels : fichier, ajout, tube Windows PowerShell 5.1 en console 850 et pwsh ; pas essayé en session 0 ni par WinRM ; commité et poussé le 23/11 |
 | 44 | 24/11 | 1024x384 et 512x384 à 60 Hz sont-ils dans les modes par défaut de l'écran virtuel ? Puis : les ajouter | ✅ ils n'y étaient qu'à 57,5 Hz ; ajoutés juste après (1024x384@60, 512x384@60) dans `CabinetModes`, utilisés à la création d'un `vdd_settings.xml` et par « Modes des bornes » ; carte et README mis à jour ; 223 tests ; commité et poussé le 24/11 |
 | 45 | 24/11 | Faire une release 0.4.5 et demander à Image borne de la déployer | ⚠️ 0.4.5 (`76f9e22` + numéro de version) : `--virtual-modes` juste en session 0 et accents de la sortie redirigée, 512x384 et 1024x384 à 60 Hz dans les modes par défaut ; exe dépendant de .NET 8 + `Shaders/`, 7,4 Mo ; 223 tests, auto-test sur une copie (normal, 1809 simulé, plein écran) ; déploiement demandé à Image borne |
+| 46 | 24/11 | Pourquoi une ligne vide en tête du fichier ? Puis : la retirer | ⚠️ elle sert dans une console (cmd n'attend pas un exe fenêtré et réaffiche son invite avant le texte), pas dans un fichier ou un tube : retirée des sorties redirigées, gardée pour la console ; `> fichier` commence par le BOM puis « Modes de … » ; 223 tests ; pas dans la 0.4.5 ; commité et poussé le 24/11 |
 
 ## Releases
 
@@ -402,3 +403,16 @@ dossier déplié du même nom) et son `RELEASE.txt` annonce « rien à installer
   de suite réussissent. C'est la quatrième fois (23/11 matin, 0.4.4, 0.4.5, et un contrôle 0.4.3) : toujours les
   vérifications qui lisent l'écran en duplication, jamais en mode normal. Cause pas établie ; le contrôle avec la
   0.4.4 n'a pas pu servir (son dossier de test avait perdu `Shaders`).
+
+### Retours d'Image borne sur la 0.4.4 (24/11)
+- À la demande du propriétaire, `SuperResScaler.exe --virtual-add 1024x384@60` lancé dans la session du joueur sur
+  Racecab2 : code 0, « Mode 1024x384@60 ajouté ; l'écran virtuel a relu ses modes ». `vdd_settings.xml` a 12 modes,
+  Windows liste 1024x384 à 58 et à 60 Hz ; `SetResolution SET -w 1024 -h 384` prend 60 Hz par défaut. Sauvegarde :
+  `C:\Racecab\_sauvegardes\vdd_settings-avant-1024x384-60.xml`. Racecab1 et 512x384@60 pas encore. Essais FnF et
+  Batman en 1024x384 à 60 Hz en cours.
+- Accents avec la 0.4.4 : sortie redirigée par cmd (`> fichier`) puis lue par `Get-Content` de Windows PowerShell 5.1
+  (WinRM) : « ajoutÃ© », « Ã‰cran », attendu sans BOM (la 0.4.5 en écrit un). La première ligne vide du fichier est
+  celle que `ShowText` écrit toujours avant le texte, pas un BOM.
+- Dans la session du joueur, la ligne d'état est juste : « Actif : VDD by MTT (virtuel) — 1920x1080 (principal) —
+  Écran 7 ».
+- La pose de la 0.4.5 attend une pause entre deux séries d'essais (campagne windowsloader en cours sur les deux bornes).

@@ -116,12 +116,12 @@ internal static class Program
             var stream = Console.OpenStandardOutput(); // before looking at the parent's console
             int? console = kind == Kernel32.StandardOutput.Pipe ? Kernel32.ParentConsoleCodePage() : null;
             using var output = new StreamWriter(stream, RedirectedEncoding(kind, console, (int)Kernel32.GetACP()));
-            output.WriteLine();
             output.WriteLine(text);
             return;
         }
         if (Kernel32.AttachConsole(Kernel32.ATTACH_PARENT_PROCESS))
         {
+            // cmd does not wait for a windowed exe: its prompt is back already, the text starts on a line of its own.
             Console.WriteLine();
             Console.WriteLine(text);
             return;
